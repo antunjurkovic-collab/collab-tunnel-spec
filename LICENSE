@@ -1,0 +1,53 @@
+IETF Trust Legal Provisions for IETF Documents
+==============================================
+
+Copyright (c) 2025 IETF Trust and the persons identified as the
+document authors (Antun Jurkovikj). All rights reserved.
+
+This document is subject to BCP 78 and the IETF Trust's Legal
+Provisions Relating to IETF Documents
+(https://trustee.ietf.org/license-info) in effect on the date of
+publication of this document. Please review these documents
+carefully, as they describe your rights and restrictions with respect
+to this document.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice,
+  this list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of Internet Society, IETF or IETF Trust, nor the names
+  of specific contributors, may be used to endorse or promote products
+  derived from this software without specific prior written permission.
+
+THIS SPECIFICATION IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SPECIFICATION, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+---
+
+PATENT NOTICE
+=============
+
+This specification describes methods covered by US Patent Application 63/895,763
+("Method and System for a Collaborative, Resource-Efficient, and Verifiable
+Communication Tunnel", filed October 8, 2025, status: Patent Pending).
+
+The specification document itself is freely available for review, citation,
+and reference.
+
+Implementations of the protocol described herein may be subject to patent
+licensing requirements. See the specification README for implementation
+licensing details.

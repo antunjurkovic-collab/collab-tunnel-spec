@@ -1,0 +1,14 @@
+# Internal strategy documents (not for public)
+PUBLISHING_STRATEGY.md
+PUBLISH_NOW.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
