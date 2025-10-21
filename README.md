@@ -17,7 +17,7 @@ The Collaboration Tunnel Protocol enables efficient, verifiable content delivery
 
 ### Publisher Implementations
 - **[WordPress Plugin](https://wordpress.org/plugins/trusted-collab-tunnel/)** - 970 URLs across 3 production sites, 100% compliance
-- **[Cloudflare Worker](https://github.com/antunjurkovic-collab/collab-tunnel-cloudflare)** - Edge-based implementation
+- **[Cloudflare Worker](https://github.com/antunjurkovic-collab/trusted-collab-worker)** - Edge-based implementation
 
 ### Consumer Implementations
 - **[Python Client Library](https://github.com/antunjurkovic-collab/collab-tunnel-python)** - Available on PyPI: `pip install collab-tunnel`
@@ -80,7 +80,7 @@ wp plugin install trusted-collab-tunnel --activate
 
 **Cloudflare Worker:**
 ```javascript
-// Deploy worker from: https://github.com/antunjurkovic-collab/collab-tunnel-cloudflare
+// Deploy worker from: https://github.com/antunjurkovic-collab/trusted-collab-worker
 ```
 
 ### For Consumers (AI Crawlers)
