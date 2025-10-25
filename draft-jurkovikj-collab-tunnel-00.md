@@ -276,6 +276,7 @@ Publishers SHOULD provide a machine-readable sitemap at a well-known location (e
 ~~~json
 {
   "version": 1,
+  "profile": "tct-1",
   "items": [
     {
       "cUrl": "https://example.com/post/",
@@ -290,6 +291,7 @@ Publishers SHOULD provide a machine-readable sitemap at a well-known location (e
 **Fields:**
 
 - `version` (integer): Sitemap format version (currently 1)
+- `profile` (string, RECOMMENDED): Protocol version identifier (e.g., "tct-1"). Enables clients to detect protocol capabilities and maintain forward compatibility as the specification evolves.
 - `items` (array): List of URL pairs
   - `cUrl` (string, required): Canonical URL
   - `mUrl` (string, required): Machine URL
@@ -347,6 +349,7 @@ Content-Type: application/json; charset=utf-8
 
 ~~~json
 {
+  "profile": "tct-1",
   "canonical_url": "https://example.com/post/",
   "title": "Article Title",
   "content": "Core article content...",
@@ -354,10 +357,19 @@ Content-Type: application/json; charset=utf-8
 }
 ~~~
 
-**Optional fields:**
+**Fields:**
+
+- `profile` (string, RECOMMENDED): Protocol version identifier (e.g., "tct-1"). Future versions (e.g., "tct-2") can introduce new fields while maintaining backward compatibility.
+- `canonical_url` (string, required): The C-URL for this resource
+- `title` (string, required): Resource title
+- `content` (string, required): Core content text
+- `hash` (string, required): Template-invariant fingerprint (matches ETag value)
+
+**Extended fields example:**
 
 ~~~json
 {
+  "profile": "tct-1",
   "canonical_url": "https://example.com/post/",
   "title": "Article Title",
   "language": "en-US",
@@ -387,6 +399,7 @@ Access-Control-Allow-Origin: *
 Content-Length: 1234
 
 {
+  "profile": "tct-1",
   "canonical_url": "https://example.com/post/",
   "title": "Understanding the Collaboration Tunnel Protocol",
   "language": "en",
