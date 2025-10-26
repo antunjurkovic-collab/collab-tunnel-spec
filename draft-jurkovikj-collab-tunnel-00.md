@@ -361,7 +361,13 @@ ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 
 ## If-None-Match Precedence
 
-When both `If-None-Match` and `If-Modified-Since` headers are present, servers MUST evaluate `If-None-Match` with precedence ({{RFC9110, Section 13.1.2}}).
+When both `If-None-Match` and `If-Modified-Since` headers are present, servers MUST give `If-None-Match` precedence per {{RFC9110, Section 13.1.2}}. This means:
+
+1. Evaluate `If-None-Match` first
+2. If ETag matches, return `304 Not Modified` (ignore `If-Modified-Since`)
+3. If ETag doesn't match, process `If-Modified-Since` (if present)
+
+**Rationale:** ETags provide stronger validation than modification dates, especially for semantic fingerprints.
 
 ## 304 Not Modified Response
 
@@ -407,6 +413,32 @@ Vary: Accept-Encoding
 
 M-URL responses primarily vary by compression (gzip, brotli), not by content type (always `application/json`).
 
+## HEAD Request Support
+
+Servers MUST support HEAD requests for all M-URLs and sitemaps.
+
+HEAD responses MUST:
+- Return same HTTP headers as equivalent GET request
+- NOT include a message body
+- Include all validators (`ETag`, `Last-Modified`, `Cache-Control`)
+
+**Example:**
+
+~~~http
+HEAD /post/llm/ HTTP/1.1
+Host: example.com
+
+HTTP/1.1 200 OK
+ETag: W/"sha256-abc123..."
+Last-Modified: Wed, 21 Oct 2025 07:28:00 GMT
+Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60
+Vary: Accept-Encoding
+Content-Type: application/json
+Content-Length: 1234
+~~~
+
+This enables efficient validation without transferring the full response body.
+
 # Sitemap-First Verification
 
 ## JSON Sitemap Format
@@ -440,6 +472,16 @@ Publishers SHOULD provide a machine-readable sitemap at a well-known location (e
   - `modified` (string, ISO 8601): Last modification timestamp
   - `contentHash` (string, required): Template-invariant fingerprint (same as M-URL ETag)
 
+**Parity Rule:**
+
+The sitemap `contentHash` value MUST match the M-URL `ETag` header value, excluding quotes and the `W/` weak prefix.
+
+**Example:**
+- M-URL returns: `ETag: W/"sha256-2c26b46b..."`
+- Sitemap contains: `"contentHash": "sha256-2c26b46b..."`
+
+This enables zero-fetch skip optimization: clients compare sitemap hash to cached ETag without fetching the M-URL.
+
 **Homepage Handling:**
 
 Publishers SHOULD include the site homepage as the **first item** in the sitemap array. This provides automated agents with immediate access to site-level context (site name, description, purpose) before processing individual content pages.
@@ -468,6 +510,41 @@ For homepages that display dynamic content listings (blog roll, latest posts), p
   ]
 }
 ~~~
+
+**Sitemap HTTP Response:**
+
+~~~http
+GET /llm-sitemap.json HTTP/1.1
+Host: example.com
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+ETag: W/"sha256-sitemap-fingerprint"
+Last-Modified: Wed, 21 Oct 2025 12:00:00 GMT
+Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60
+Vary: Accept-Encoding
+Content-Length: 4567
+
+{
+  "version": 1,
+  "profile": "tct-1",
+  "items": [...]
+}
+~~~
+
+**Conditional Sitemap Fetch:**
+
+~~~http
+GET /llm-sitemap.json HTTP/1.1
+Host: example.com
+If-None-Match: W/"sha256-sitemap-fingerprint"
+
+HTTP/1.1 304 Not Modified
+ETag: W/"sha256-sitemap-fingerprint"
+Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60
+~~~
+
+Clients SHOULD use conditional requests for sitemap to avoid unnecessary bandwidth when sitemap unchanged.
 
 ## Zero-Fetch Skip Logic
 
@@ -696,10 +773,71 @@ Publishers SHOULD:
 
 ## Denial of Service
 
+### Sitemap Abuse
+
 Large sitemaps MAY be used for DoS attacks. Agents SHOULD:
 - Implement request rate limiting
 - Set maximum sitemap size limits (e.g., 100 MB)
 - Use streaming JSON parsers for large sitemaps
+
+### HEAD vs GET Bandwidth
+
+HEAD requests provide DoS mitigation by enabling validation without body transfer:
+- HEAD request: ~500 bytes (headers only)
+- GET request: 1-100 KB (full JSON body)
+
+Agents SHOULD use HEAD for validation before GET.
+
+## Injection Surface Reduction
+
+M-URL JSON responses contain only structured text, reducing injection attack surface compared to HTML:
+- No `<script>` tags or inline JavaScript
+- No CSS injection vectors
+- No HTML parsing ambiguities
+
+However, agents MUST:
+- Validate JSON syntax before processing
+- Sanitize content before rendering to users
+- Treat URLs in JSON as untrusted input
+
+## Content Provenance (Optional)
+
+Publishers MAY enhance content authenticity using:
+
+**Content-Digest (RFC 9530):**
+~~~http
+Content-Digest: sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
+~~~
+
+**HTTP Message Signatures (RFC 9421):**
+~~~http
+Signature: sig1=:MEUCIQDXlI...;
+Signature-Input: sig1=("content-digest" "content-type");created=1618884473;keyid="key-1"
+~~~
+
+These mechanisms are OPTIONAL extensions outside TCT core requirements.
+
+## Privacy and PII
+
+M-URL JSON MAY contain personally identifiable information (PII) or sensitive content. Publishers SHOULD:
+- Apply same access controls as C-URL HTML
+- Respect user privacy preferences
+- Comply with applicable data protection regulations (GDPR, CCPA, etc.)
+
+Agents MUST:
+- Honor robots.txt and meta robots directives
+- Respect HTTP authentication requirements
+- Not expose cached content beyond publisher-specified Cache-Control directives
+
+## Access Control
+
+Publishers MAY restrict M-URL access using standard HTTP mechanisms:
+- HTTP Authentication (Basic, Bearer, etc.)
+- IP allowlisting
+- Rate limiting per client
+- Geographic restrictions
+
+Access controls SHOULD be consistent between C-URL and M-URL for the same resource.
 
 # Energy Efficiency Considerations
 
