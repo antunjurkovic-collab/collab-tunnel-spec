@@ -45,6 +45,20 @@ normative:
     date: 2012-04
     target: https://www.rfc-editor.org/rfc/rfc6596
 
+  RFC2119:
+    title: Key words for use in RFCs to Indicate Requirement Levels
+    author:
+      - name: S. Bradner
+    date: 1997-03
+    target: https://www.rfc-editor.org/rfc/rfc2119
+
+  RFC8174:
+    title: Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words
+    author:
+      - name: B. Leiba
+    date: 2017-05
+    target: https://www.rfc-editor.org/rfc/rfc8174
+
 informative:
   ResourceSync:
     title: ResourceSync Framework Specification
@@ -56,6 +70,12 @@ informative:
   AMP:
     title: Accelerated Mobile Pages (AMP) HTML Specification
     target: https://amp.dev/documentation/guides-and-tutorials/learn/spec/amphtml/
+
+  XMLSitemaps:
+    title: Sitemap XML format
+    target: https://www.sitemaps.org/protocol.html
+    author:
+      - org: sitemaps.org
 
 --- abstract
 
@@ -69,7 +89,7 @@ Automated agents (AI crawlers, search engines, content aggregators) increasingly
 
 Existing approaches address portions of this problem:
 
-- XML Sitemaps {{?RFC6926}} provide discovery but lack content fingerprints
+- XML Sitemaps {{XMLSitemaps}} provide discovery but lack content fingerprints
 - AMP {{AMP}} reduces HTML overhead but lacks synchronized hashing
 - ResourceSync {{ResourceSync}} provides digest-based synchronization but lacks endpoint-level validator discipline
 
@@ -134,6 +154,78 @@ The Collaboration Tunnel Protocol consists of four coordinated mechanisms:
 │  │   contentHash}      │          │                      │
 └────────────────────────┘          └──────────────────────┘
 ~~~
+
+# Protocol Requirements
+
+This section defines the normative requirements for TCT compliance.
+
+## MUST Requirements
+
+Implementations MUST:
+
+1. **Bidirectional Discovery**
+   - C-URL HTML MUST include `<link rel="alternate" type="application/json">` pointing to M-URL
+   - M-URL response MUST include `Link: <c-url>; rel="canonical"` HTTP header
+
+2. **Validators**
+   - M-URL response MUST include `ETag` header
+   - M-URL response MUST include `Last-Modified` header
+   - Sitemap MUST include `contentHash` field for each URL
+
+3. **Conditional Requests**
+   - Server MUST honor `If-None-Match` header
+   - Server MUST return `304 Not Modified` when ETag matches
+   - Server MUST give `If-None-Match` precedence over `If-Modified-Since` ({{RFC9110, Section 13.1.2}})
+
+4. **304 Response**
+   - Response MUST NOT include message body
+   - Response MUST include `ETag` header
+   - Response MUST include `Cache-Control` header
+
+5. **HEAD Support**
+   - HEAD request MUST return same headers as GET
+   - HEAD request MUST NOT include message body
+
+6. **Sitemap Parity**
+   - Sitemap `contentHash` value MUST equal M-URL `ETag` value (excluding quotes and `W/` prefix)
+   - Example: M-URL ETag `W/"sha256-abc"` → Sitemap contentHash `sha256-abc`
+
+## SHOULD Recommendations
+
+Implementations SHOULD:
+
+1. **Cache-Control**
+   - Use: `max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400`
+   - Rationale: Enables revalidation with graceful stale serving
+
+2. **Vary Header**
+   - Include: `Vary: Accept-Encoding`
+   - Rationale: Content varies by compression (gzip, br)
+
+3. **Weak ETags**
+   - Prefer weak ETags (`W/"sha256-..."`) for semantic fingerprints
+   - Rationale: Template-invariant fingerprint is semantic, not byte-for-byte
+   - Note: Strong ETags acceptable if computed per representation variant
+
+4. **Content Pages Only**
+   - Return 404 for M-URL requests to archive pages
+   - Include only content pages in sitemap
+
+## MAY Extensions
+
+Implementations MAY:
+
+1. **Policy Descriptor**
+   - Provide machine-readable policy at `/llm-policy.json`
+   - Link policy via `Link: </llm-policy.json>; rel="describedby"; type="application/json"`
+
+2. **Additional Integrity**
+   - Use `Content-Digest` header (RFC 9530)
+   - Use HTTP Message Signatures (RFC 9421)
+
+3. **Additional Formats**
+   - Provide PDF JSON alternates
+   - Provide receipt/proof systems
 
 # Bidirectional Discovery
 
@@ -239,16 +331,31 @@ function generateFingerprint(html):
 
 ## ETag Generation
 
-The M-URL response MUST include an `ETag` header containing the template-invariant fingerprint:
+The M-URL response MUST include an `ETag` header containing the template-invariant fingerprint.
+
+**Weak ETag (RECOMMENDED):**
+
+~~~http
+ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+~~~
+
+**Strong ETag (acceptable):**
 
 ~~~http
 ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 ~~~
 
-The ETag value:
-- MUST be enclosed in quotes (strong ETag)
-- MUST start with `sha256-` prefix
+**Rationale:**
+- Template-invariant fingerprints represent semantic equivalence, not byte-for-byte identity
+- Weak ETags (`W/"..."`) better express this semantic validator property
+- Strong ETags acceptable if computed per representation variant (including compression)
+
+**Format Requirements:**
+- MUST start with `sha256-` prefix (after optional `W/"` weak prefix)
 - MUST contain 64 hexadecimal characters (256 bits)
+- Weak ETags SHOULD be used for semantic fingerprints
+
+**Note:** `If-Range` requests require strong ETags; respond with `412 Precondition Failed` if client sends `If-Range` with weak ETag.
 
 # Conditional Request Discipline
 
@@ -268,30 +375,37 @@ When the ETag matches the `If-None-Match` value:
 
 ~~~http
 HTTP/1.1 304 Not Modified
-ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 Last-Modified: Wed, 21 Oct 2025 07:28:00 GMT
-Cache-Control: private, max-age=0, must-revalidate
-Vary: Accept
+Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400
+Vary: Accept-Encoding
 ~~~
 
 ## Cache-Control Directives
 
-M-URL responses SHOULD include:
-
-- `must-revalidate`: Require validation before serving stale content
-- `max-age=0` or `private`: Prevent long-term caching without validation
+M-URL responses SHOULD use:
 
 ~~~http
-Cache-Control: private, max-age=0, must-revalidate
+Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400
 ~~~
+
+**Directives:**
+- `max-age=0`: Require revalidation before serving from cache
+- `must-revalidate`: Do not serve stale without successful revalidation
+- `stale-while-revalidate=60`: Serve stale while revalidating in background (60s window)
+- `stale-if-error=86400`: Serve stale if origin unavailable (24h window)
+
+Note: Avoid `private` on M-URLs and sitemaps (they are cacheable by shared caches).
 
 ## Vary Header
 
-Responses SHOULD include `Vary: Accept` to enable content negotiation:
+Responses SHOULD include `Vary: Accept-Encoding` to indicate compression variance:
 
 ~~~http
-Vary: Accept
+Vary: Accept-Encoding
 ~~~
+
+M-URL responses primarily vary by compression (gzip, brotli), not by content type (always `application/json`).
 
 # Sitemap-First Verification
 
@@ -536,11 +650,11 @@ Content-Type: application/json; charset=utf-8
 ~~~http
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
-ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 Link: <https://example.com/post/>; rel="canonical"
 Last-Modified: Wed, 15 Oct 2025 14:30:00 GMT
-Cache-Control: private, max-age=0, must-revalidate
-Vary: Accept
+Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400
+Vary: Accept-Encoding
 Access-Control-Allow-Origin: *
 Content-Length: 1234
 
@@ -817,7 +931,8 @@ function handle_llm_endpoint() {
   header('Content-Type: application/json');
   header("ETag: {$etag}");
   header("Link: <{$canonical_url}>; rel=\"canonical\"");
-  header('Cache-Control: private, max-age=0, must-revalidate');
+  header('Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400');
+  header('Vary: Accept-Encoding');
 
   echo json_encode([
     'canonical_url' => $canonical_url,
