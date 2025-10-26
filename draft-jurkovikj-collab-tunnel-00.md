@@ -175,6 +175,34 @@ Example:
 
 Alternative patterns MAY be used but MUST be documented in a site-level manifest.
 
+## Content Pages Only
+
+M-URL endpoints SHOULD be provided only for **content pages** (posts, articles, pages) and NOT for archive pages (category listings, tag archives, search results, date archives).
+
+**Rationale:**
+
+- Archive pages contain navigation and lists, not primary content
+- Template-invariant fingerprinting is designed for stable content, not dynamic lists
+- Archive pages change frequently as new content is published
+
+**Implementation:**
+
+- Publishers SHOULD return HTTP 404 for M-URL requests to archive pages
+- Sitemaps SHOULD include only content page URLs, not archives
+- Homepage MAY be included if it represents stable content
+
+**Content page examples:**
+- Blog posts: `/blog/understanding-tct/`
+- Articles: `/news/2025/protocol-launch/`
+- Static pages: `/about/`, `/contact/`
+
+**Archive page examples (should NOT have M-URLs):**
+- Category archives: `/category/technology/`
+- Tag archives: `/tag/web-protocols/`
+- Date archives: `/2025/10/`
+- Search results: `/search/?q=protocol`
+- Author archives: `/author/john/`
+
 # Template-Invariant Fingerprinting
 
 ## Normalization Algorithm
@@ -298,6 +326,35 @@ Publishers SHOULD provide a machine-readable sitemap at a well-known location (e
   - `modified` (string, ISO 8601): Last modification timestamp
   - `contentHash` (string, required): Template-invariant fingerprint (same as M-URL ETag)
 
+**Homepage Handling:**
+
+Publishers SHOULD include the site homepage as the **first item** in the sitemap array. This provides automated agents with immediate access to site-level context (site name, description, purpose) before processing individual content pages.
+
+For homepages that display dynamic content listings (blog roll, latest posts), publishers MAY synthesize stable content representing the site overview rather than the dynamic list.
+
+**Example with homepage first:**
+
+~~~json
+{
+  "version": 1,
+  "profile": "tct-1",
+  "items": [
+    {
+      "cUrl": "https://example.com/",
+      "mUrl": "https://example.com/llm/",
+      "modified": "2025-10-15T08:00:00Z",
+      "contentHash": "sha256-abc123..."
+    },
+    {
+      "cUrl": "https://example.com/about/",
+      "mUrl": "https://example.com/about/llm/",
+      "modified": "2025-10-01T10:00:00Z",
+      "contentHash": "sha256-def456..."
+    }
+  ]
+}
+~~~
+
 ## Zero-Fetch Skip Logic
 
 Automated agents SHOULD:
@@ -332,6 +389,95 @@ else:
     process(response.body)
     cache(item.mUrl, response.headers['ETag'])
 ~~~
+
+# Publisher Policy Descriptor
+
+Publishers MAY provide a machine-readable policy descriptor at `/llm-policy.json` to communicate usage terms, rate limits, and content licensing preferences to automated agents.
+
+## Policy Endpoint
+
+The policy descriptor SHOULD be available at:
+
+~~~
+https://example.com/llm-policy.json
+~~~
+
+## JSON Schema
+
+~~~json
+{
+  "profile": "tct-policy-1",
+  "version": 1,
+  "effective": "2025-10-01T00:00:00Z",
+  "updated": "2025-10-15T12:00:00Z",
+
+  "policy_urls": {
+    "terms_of_service": "https://example.com/terms/",
+    "payment_info": "https://example.com/pricing/",
+    "contact": "https://example.com/contact/"
+  },
+
+  "purposes": {
+    "allow_ai_input": true,
+    "allow_ai_train": false,
+    "allow_search_indexing": true
+  },
+
+  "requirements": {
+    "attribution_required": true,
+    "link_back_required": false,
+    "notice_required": true
+  },
+
+  "rate_hints": {
+    "max_requests_per_second": null,
+    "max_requests_per_day": 10000,
+    "note": "Advisory limits, honor system"
+  }
+}
+~~~
+
+**Fields:**
+
+- `profile` (string): Policy schema version identifier (e.g., "tct-policy-1")
+- `version` (integer): Policy revision number
+- `effective` (string, ISO 8601): When policy took effect
+- `updated` (string, ISO 8601): Last policy modification
+- `policy_urls` (object): URLs to human-readable policy documents
+  - `terms_of_service`: Legal terms URL
+  - `payment_info`: Pricing/billing information URL (for paid access)
+  - `contact`: Publisher contact for licensing inquiries
+- `purposes` (object): Usage permissions
+  - `allow_ai_input`: Content may be used as AI input (RAG, context)
+  - `allow_ai_train`: Content may be used for model training
+  - `allow_search_indexing`: Content may be indexed for search
+- `requirements` (object): Usage conditions
+  - `attribution_required`: Must credit publisher when using content
+  - `link_back_required`: Must link to canonical URL when republishing
+  - `notice_required`: Must notify publisher of commercial use
+- `rate_hints` (object): Advisory crawl rate limits (non-binding)
+  - `max_requests_per_second`: Requests per second limit (null = no limit)
+  - `max_requests_per_day`: Requests per day limit
+  - `note`: Additional guidance
+
+## Discovery
+
+The policy descriptor SHOULD be linked from the sitemap with a `describedby` Link header:
+
+~~~http
+Link: </llm-policy.json>; rel="describedby"
+~~~
+
+Automated agents SHOULD:
+
+1. Fetch `/llm-policy.json` before crawling
+2. Honor stated usage restrictions
+3. Respect rate hints to avoid overwhelming origin
+4. Review terms before commercial use
+
+## Alignment with IETF AIPREF
+
+This policy format is designed to complement the IETF AIPREF (AI Preferences) proposal, providing machine-readable expressions of publisher preferences for automated agent behavior.
 
 # M-URL Response Format
 
