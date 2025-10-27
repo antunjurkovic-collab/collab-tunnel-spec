@@ -109,7 +109,7 @@ informative:
 
 --- abstract
 
-This document specifies the Collaboration Tunnel Protocol, a method for efficient, verifiable content delivery between web publishers and automated agents. The protocol achieves 60-90% bandwidth reduction through bidirectional URL discovery, template-invariant content fingerprinting, sitemap-first verification, and strict conditional request discipline.
+This document specifies the Collaboration Tunnel Protocol, a method for efficient, verifiable content delivery between web publishers and automated agents. The protocol typically achieves 80-90% bandwidth reduction (83% median measured) through bidirectional URL discovery, template-invariant content fingerprinting, sitemap-first verification, and strict conditional request discipline.
 
 --- middle
 
@@ -207,6 +207,7 @@ Implementations MUST:
    - Server MUST honor `If-None-Match` header
    - Server MUST return `304 Not Modified` when ETag matches
    - Server MUST give `If-None-Match` precedence over `If-Modified-Since` ({{RFC9110, Section 13.1.2}})
+   - Server MUST respond with `412 Precondition Failed` when `If-Range` is sent with a weak ETag ({{RFC9110, Section 13.1.5}})
 
 4. **304 Response**
    - Response MUST NOT include message body
@@ -221,11 +222,16 @@ Implementations MUST:
 6. **Sitemap Parity**
    - Sitemap `contentHash` value MUST equal M-URL `ETag` value (excluding quotes and `W/` prefix)
    - Example: M-URL ETag `W/"sha256-abc"` -> Sitemap contentHash `sha256-abc`
+   - See "Template-Invariant Fingerprinting" and "ETag Generation" for computation and format details
 
 7. **Canonical Verification (Agents)**
    - Agents MUST verify that the M-URL response includes `Link: <c-url>; rel="canonical"` and that the canonical URL matches the expected C-URL before processing
    - If the canonical link is missing or mismatched, agents SHOULD treat the endpoint as non-compliant and skip ingestion
-   - If HTML `<link rel="alternate">` discovery and the M-URL’s self-declared canonical conflict, agents SHOULD prefer the M-URL’s self-declared canonical and flag for operator review
+   - If HTML `<link rel="alternate">` discovery and the M-URL's self-declared canonical conflict, agents SHOULD prefer the M-URL's self-declared canonical and flag for operator review
+
+8. **Protected Sitemaps**
+   - Sitemaps that list protected M-URLs MUST NOT be served without access controls equivalent to those applied to the corresponding M-URLs
+
 
 ## SHOULD Recommendations
 
@@ -332,6 +338,7 @@ M-URL endpoints SHOULD be provided only for **content pages** (posts, articles, 
 - Publishers SHOULD return HTTP 404 for M-URL requests to archive pages
 - Sitemaps SHOULD include only content page URLs, not archives
 - Homepage MAY be included if it represents stable content
+ - CMS guidance (non-normative): For platforms like WordPress, exclude archive-like routes (e.g., category, tag, search, date, author) from M-URL handling and return 404 rather than 200 with empty payload. Ensure only singular content types (posts, pages, articles) emit M-URLs and sitemap entries.
 
 **Content page examples:**
 - Blog posts: `/blog/understanding-tct/`
@@ -354,10 +361,12 @@ To generate a template-invariant fingerprint:
 1. **Parse**: Extract core content from HTML (Article, main content region)
 2. **Filter**: Remove boilerplate (navigation, footer, sidebar, ads, scripts, styles)
 3. **Strip Tags**: Convert HTML to plain text
+To achieve interoperable fingerprints across implementations, the normalization step MUST, at a minimum:
+
 4. **Normalize**:
-   - Decode HTML entities
+   - Decode HTML entities (e.g., &amp;; &#x2014;)
    - Apply Unicode normalization (NFKC) and Unicode casefolding (locale-independent)
-   - Remove control characters
+   - Remove control characters (Unicode category Cc)
    - Collapse whitespace runs to a single ASCII space
    - Optionally normalize punctuation (e.g., map curly quotes to ASCII)
    - Trim leading/trailing whitespace
@@ -385,6 +394,11 @@ function generateFingerprint(html):
 
 **Note**: This is illustrative pseudocode. Production implementations must use global replacement for all normalization patterns, handle Unicode edge cases, and select appropriate content extraction strategies for their platform.
 
+**Core Content Extraction Consistency**: Core content extraction (e.g., selecting the `<article>` or `<main>` region) is implementation-defined, but for a given resource it MUST be consistent across updates to ensure stable fingerprinting.
+
+**Punctuation Normalization**: Punctuation normalization is OPTIONAL. Agents MUST NOT assume punctuation normalization when comparing endpoint `ETag` values to sitemap `contentHash` values.
+
+
 ## ETag Generation
 
 The M-URL response MUST include an `ETag` header containing the template-invariant fingerprint.
@@ -410,8 +424,9 @@ ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 - MUST start with `sha256-` prefix (after optional `W/"` weak prefix)
 - MUST contain 64 hexadecimal characters (256 bits)
 - Weak ETags SHOULD be used for semantic fingerprints
+ - See "Sitemap-First Verification" for the parity rule between endpoint ETag and sitemap `contentHash`
 
-**Note:** `If-Range` requests require strong ETags; respond with `412 Precondition Failed` if client sends `If-Range` with weak ETag.
+**Note:** `If-Range` requests require strong ETags; servers MUST respond with `412 Precondition Failed` if a client sends `If-Range` with a weak ETag.
 
 # Conditional Request Discipline
 
@@ -534,17 +549,16 @@ The sitemap `contentHash` value MUST match the M-URL `ETag` header value, exclud
 
 **Forward Compatibility:**
 
-Clients MUST ignore unknown fields in the sitemap JSON. Servers MAY add additional fields to support future protocol versions.
+Clients MUST ignore unknown fields in the sitemap JSON. Servers MAY add additional fields to support future protocol versions. Agents SHOULD read the `profile` field when present; unknown profile values SHOULD NOT cause ingestion failure but MAY be logged for analysis.
 
 ## Sitemap Scalability
 
 Publishers and agents SHOULD consider scalability for large sites:
 
-- Publishers MAY split sitemaps into an index (a sitemap-of-sitemaps) to segment large URL sets
+- Publishers MAY split sitemaps into an index (a sitemap-of-sitemaps) to segment large URL sets (analogous to XML Sitemaps sitemapindex)
 - Servers SHOULD support compression (e.g., `Content-Encoding: gzip` or `br`) for sitemap responses; agents SHOULD accept compressed responses
 - Agents SHOULD use streaming JSON parsers for large sitemaps and enforce a maximum sitemap size (e.g., 100 MB)
 
-**Example:
 - M-URL returns: `ETag: W/"sha256-2c26b46b..."`
 - Sitemap contains: `"contentHash": "sha256-2c26b46b..."`
 
@@ -776,7 +790,7 @@ Content-Type: application/json; charset=utf-8
 
 **Forward Compatibility:**
 
-Clients MUST ignore unknown fields in the JSON payload. Servers MAY add additional fields to support future protocol versions or domain-specific metadata.
+Clients MUST ignore unknown fields in the JSON payload. Servers MAY add additional fields to support future protocol versions or domain-specific metadata. Agents SHOULD read the `profile` field when present; unknown values SHOULD NOT cause ingestion failure but MAY be logged.
 
 **Extended fields example:**
 
@@ -837,7 +851,7 @@ This section provides non-normative operational guidance for deployers and autom
 
 **Discovery and Verification**
 - Prefer discovery via HTML `<link rel="alternate" type="application/json">`, HTTP `Link` headers, or sitemap entries; agents MUST NOT assume a fixed path
-- Agents SHOULD verify the M-URL’s canonical link header before processing and skip ingestion if missing or mismatched
+- Agents SHOULD verify the M-URL's canonical link header before processing and skip ingestion if missing or mismatched
 
 **Network and WAFs**
 - Allow the HEAD method (some WAFs block by default) to enable efficient validation
@@ -922,8 +936,9 @@ M-URL JSON MAY contain personally identifiable information (PII) or sensitive co
 - Respect user privacy preferences
 - Comply with applicable data protection regulations (GDPR, CCPA, etc.)
 
-Agents MUST:
-- Honor robots.txt and meta robots directives (agents SHOULD respect robots.txt as site-wide policy across all resources)
+
+Agents SHOULD:
+- Honor robots.txt and meta robots directives as a site-wide policy across resources
 - Respect HTTP authentication requirements
 - Not expose cached content beyond publisher-specified Cache-Control directives
 
@@ -937,9 +952,15 @@ Publishers MAY restrict M-URL access using standard HTTP mechanisms:
 
 Access controls SHOULD be consistent between C-URL and M-URL for the same resource.
 
+
+**Authenticated Sitemaps (Informative):**
+Publishers that protect M-URLs MAY apply equivalent access controls to sitemap endpoints. Agents SHOULD obtain and reuse credentials to access protected sitemaps. Sitemaps MUST NOT disclose protected resources without equivalent access controls.
+
 **Security Note**: Authenticated M-URLs MUST NOT leak protected content via publicly accessible sitemaps. Publishers MUST either exclude protected resources from sitemaps or apply equivalent access controls to the sitemap itself.
 
 # Energy Efficiency Considerations
+
+Summary: Network transmission savings are direct and measurable. The impact on AI inference energy depends on model architecture and deployment specifics and is presented for illustrative context.
 
 ## Overview
 
@@ -1208,6 +1229,15 @@ This section is informative.
 **AI Inference Energy:**
 - Highly variable: depends on model size (parameters), quantization, hardware (GPU/TPU type), batching, and prompt caching
 - No single authoritative figure exists; published estimates vary by 10x or more
+
+## Summary Table (Assumptions and Variability)
+
+| Aspect                    | Assumption/Metric                         | Variability/Notes                               |
+|---------------------------|-------------------------------------------|--------------------------------------------------|
+| Network energy intensity  | 0.06 kWh/GB (midpoint)                    | 0.03-0.14 kWh/GB depending on network           |
+| Bandwidth reduction       | ~83% (85.3 KB saved/fetch)                | Depends on site content and formatting          |
+| Crawler compute reduction | CPU ~94%, Memory ~95% (median)            | Varies by extractor, hardware, and workload     |
+| Inference energy          | Not standardized; illustrative only       | Strongly depends on model, batching, caching    |
 
 ## Example Calculations
 
