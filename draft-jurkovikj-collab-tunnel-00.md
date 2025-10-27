@@ -60,6 +60,36 @@ normative:
     target: https://www.rfc-editor.org/rfc/rfc8174
 
 informative:
+  RFC9530:
+    title: Digest Fields
+    author:
+      - name: L. Pardue
+      - name: R. Polli
+    date: 2024-02
+    target: https://www.rfc-editor.org/rfc/rfc9530
+
+  RFC9421:
+    title: HTTP Message Signatures
+    author:
+      - name: A. Backman
+      - name: J. Richer
+      - name: M. Sporny
+    date: 2024-02
+    target: https://www.rfc-editor.org/rfc/rfc9421
+
+  RFC6973:
+    title: Privacy Considerations for Internet Protocols
+    author:
+      - name: A. Cooper
+      - name: H. Tschofenig
+      - name: B. Aboba
+      - name: J. Peterson
+      - name: J. Morris
+      - name: M. Hansen
+      - name: R. Smith
+    date: 2013-07
+    target: https://www.rfc-editor.org/rfc/rfc6973
+
   ResourceSync:
     title: ResourceSync Framework Specification
     author:
@@ -126,7 +156,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 The Collaboration Tunnel Protocol consists of four coordinated mechanisms:
 
-1. **Bidirectional Discovery**: Explicit C-URL ↔ M-URL handshake preventing SEO conflicts
+1. **Bidirectional Discovery**: Explicit C-URL <-> M-URL handshake preventing SEO conflicts
 2. **Template-Invariant Fingerprinting**: Normalized content hashing for stable cache validation
 3. **Conditional Request Discipline**: Strict If-None-Match precedence and 304 responses
 4. **Sitemap-First Verification**: Zero-fetch skip logic when content unchanged
@@ -134,25 +164,26 @@ The Collaboration Tunnel Protocol consists of four coordinated mechanisms:
 ## Architecture
 
 ~~~
-┌────────────────────────┐          ┌──────────────────────┐
-│  Publisher (Origin)    │          │  Automated Agent     │
-├────────────────────────┤          ├──────────────────────┤
-│                        │          │                      │
-│  C-URL (HTML)          │◄─────────┤  1. Fetch Sitemap    │
-│  ├─ <link rel=         │          │                      │
-│  │  "alternate"        │          │  2. Compare Hashes   │
-│  │  type="app/json"    │          │     (Zero-Fetch)     │
-│  │  href="/llm/">      │          │                      │
-│                        │          │  3. If Changed:      │
-│  M-URL (/llm/)         │          │     GET /llm/        │
-│  ├─ Link: canonical    │◄─────────┤     If-None-Match    │
-│  ├─ ETag: sha256-...   │          │                      │
-│  ├─ Content-Type: JSON │──────────►  4. 304 or 200+JSON  │
-│                        │          │                      │
-│  /llm-sitemap.json     │          │  5. Cache ETag       │
-│  ├─ {cUrl, mUrl,       │◄─────────┤                      │
-│  │   contentHash}      │          │                      │
-└────────────────────────┘          └──────────────────────┘
++------------------------+          +----------------------+
+|  Publisher (Origin)    |          |  Automated Agent     |
++------------------------+          +----------------------+
+|                        |          |                      |
+|  C-URL (HTML)          |<---------|  1. Fetch Sitemap    |
+|  +- <link rel=         |          |                      |
+|  |  "alternate"        |          |  2. Compare Hashes   |
+|  |  type="application/ |          |     (Zero-Fetch)     |
+|  |       json"         |          |                      |
+|  |  href="/llm/">      |          |  3. If Changed:      |
+|                        |          |     GET /llm/        |
+|  M-URL (/llm/)         |<---------|     If-None-Match    |
+|  +- Link: canonical    |          |                      |
+|  +- ETag: sha256-...   |          |                      |
+|  +- Content-Type: JSON |--------->|  4. 304 or 200+JSON  |
+|                        |          |                      |
+|  /llm-sitemap.json     |          |  5. Cache ETag       |
+|  +- {cUrl, mUrl,       |<---------|                      |
+|  |   contentHash}      |          |                      |
++------------------------+          +----------------------+
 ~~~
 
 # Protocol Requirements
@@ -169,7 +200,7 @@ Implementations MUST:
 
 2. **Validators**
    - M-URL response MUST include `ETag` header
-   - M-URL response MUST include `Last-Modified` header
+   - M-URL response SHOULD include `Last-Modified` header when available
    - Sitemap MUST include `contentHash` field for each URL
 
 3. **Conditional Requests**
@@ -180,15 +211,21 @@ Implementations MUST:
 4. **304 Response**
    - Response MUST NOT include message body
    - Response MUST include `ETag` header
-   - Response MUST include `Cache-Control` header
+   - Response SHOULD include `Cache-Control` header
 
 5. **HEAD Support**
+   - Servers SHOULD support HEAD requests for all M-URLs and sitemaps
    - HEAD request MUST return same headers as GET
    - HEAD request MUST NOT include message body
 
 6. **Sitemap Parity**
    - Sitemap `contentHash` value MUST equal M-URL `ETag` value (excluding quotes and `W/` prefix)
-   - Example: M-URL ETag `W/"sha256-abc"` → Sitemap contentHash `sha256-abc`
+   - Example: M-URL ETag `W/"sha256-abc"` -> Sitemap contentHash `sha256-abc`
+
+7. **Canonical Verification (Agents)**
+   - Agents MUST verify that the M-URL response includes `Link: <c-url>; rel="canonical"` and that the canonical URL matches the expected C-URL before processing
+   - If the canonical link is missing or mismatched, agents SHOULD treat the endpoint as non-compliant and skip ingestion
+   - If HTML `<link rel="alternate">` discovery and the M-URL’s self-declared canonical conflict, agents SHOULD prefer the M-URL’s self-declared canonical and flag for operator review
 
 ## SHOULD Recommendations
 
@@ -229,6 +266,8 @@ Implementations MAY:
 
 # Bidirectional Discovery
 
+Note: Path names in examples are non-normative. This specification does not require any specific URL paths. Examples such as "/llm/" and "/tct/" are illustrative. Servers MAY choose alternative slugs or publish mappings. Agents MUST NOT assume a fixed path and SHOULD discover M-URLs via HTML `rel="alternate"`, HTTP `Link` headers, or the JSON sitemap.
+
 ## C-URL to M-URL Mapping
 
 The C-URL MUST include an HTML `<link>` element in the document `<head>`:
@@ -259,13 +298,24 @@ This establishes bidirectional verification and prevents SEO duplication.
 
 M-URLs SHOULD follow a deterministic pattern from C-URLs.
 
-**Recommended pattern**: Append `/llm/` to C-URL path
+**Non-normative examples**: Append a slug to the C-URL path, such as `/tct/` or `/llm/`.
 
 Example:
 - C-URL: `https://example.com/post/`
-- M-URL: `https://example.com/post/llm/`
+- M-URL: `https://example.com/post/tct/` (or `.../llm/`)
 
-Alternative patterns MAY be used but MUST be documented in a site-level manifest.
+**Guidance**:
+- These path patterns are examples, not protocol requirements. If a preferred slug collides with existing site routes, publishers MAY choose an alternate (e.g., `/tct/`, `/api/tct/`) or publish a mapping in a site-level manifest.
+- Agents MUST NOT assume a fixed path. Agents SHOULD discover M-URLs via HTML `<link rel="alternate" type="application/json">`, HTTP `Link` headers, or the JSON sitemap.
+
+**Migration Note**: Publishers MAY use HTTP 308 Permanent Redirect to migrate from legacy paths to preferred endpoints and SHOULD list only the primary M-URL in the sitemap.
+
+**Discovery Hint**: Publishers MAY include a `Link` header on the homepage or C-URL HTML responses to advertise the sitemap location (example paths only):
+
+~~~http
+Link: </tct-sitemap.json>; rel="index"; type="application/json"
+Link: </llm-sitemap.json>; rel="index"; type="application/json"
+~~~
 
 ## Content Pages Only
 
@@ -305,9 +355,11 @@ To generate a template-invariant fingerprint:
 2. **Filter**: Remove boilerplate (navigation, footer, sidebar, ads, scripts, styles)
 3. **Strip Tags**: Convert HTML to plain text
 4. **Normalize**:
-   - Convert to lowercase
-   - Collapse whitespace runs to single space
-   - Normalize quotation marks (e.g., " → ", ' → ')
+   - Decode HTML entities
+   - Apply Unicode normalization (NFKC) and Unicode casefolding (locale-independent)
+   - Remove control characters
+   - Collapse whitespace runs to a single ASCII space
+   - Optionally normalize punctuation (e.g., map curly quotes to ASCII)
    - Trim leading/trailing whitespace
 5. **Hash**: Compute SHA-256 of normalized text
 
@@ -320,14 +372,18 @@ function generateFingerprint(html):
   text = stripTags(content)
 
   normalized = text
-    .toLowerCase()
+    .decodeEntities()
+    .unicodeNormalize('NFKC')
+    .casefold()
+    .removeControlChars()
     .replace(/\s+/g, ' ')
-    .replace(/[""]/, '"')
-    .replace(/['']/, "'")
+    .normalizePunctuation()
     .trim()
 
   return "sha256-" + sha256(normalized)
 ~~~
+
+**Note**: This is illustrative pseudocode. Production implementations must use global replacement for all normalization patterns, handle Unicode edge cases, and select appropriate content extraction strategies for their platform.
 
 ## ETag Generation
 
@@ -375,7 +431,7 @@ When the ETag matches the `If-None-Match` value:
 
 1. Server MUST respond with `304 Not Modified`
 2. Response MUST NOT include a message body
-3. Response MUST include validators: `ETag`, `Last-Modified`, `Cache-Control`
+3. Response MUST include `ETag` header; SHOULD include `Last-Modified` and `Cache-Control` headers
 
 **Example:**
 
@@ -415,7 +471,7 @@ M-URL responses primarily vary by compression (gzip, brotli), not by content typ
 
 ## HEAD Request Support
 
-Servers MUST support HEAD requests for all M-URLs and sitemaps.
+Servers SHOULD support HEAD requests for all M-URLs and sitemaps.
 
 HEAD responses MUST:
 - Return same HTTP headers as equivalent GET request
@@ -469,14 +525,26 @@ Publishers SHOULD provide a machine-readable sitemap at a well-known location (e
 - `items` (array): List of URL pairs
   - `cUrl` (string, required): Canonical URL
   - `mUrl` (string, required): Machine URL
-  - `modified` (string, ISO 8601): Last modification timestamp
+  - `modified` (string, RFC 3339): Last modification timestamp
   - `contentHash` (string, required): Template-invariant fingerprint (same as M-URL ETag)
 
 **Parity Rule:**
 
 The sitemap `contentHash` value MUST match the M-URL `ETag` header value, excluding quotes and the `W/` weak prefix.
 
-**Example:**
+**Forward Compatibility:**
+
+Clients MUST ignore unknown fields in the sitemap JSON. Servers MAY add additional fields to support future protocol versions.
+
+## Sitemap Scalability
+
+Publishers and agents SHOULD consider scalability for large sites:
+
+- Publishers MAY split sitemaps into an index (a sitemap-of-sitemaps) to segment large URL sets
+- Servers SHOULD support compression (e.g., `Content-Encoding: gzip` or `br`) for sitemap responses; agents SHOULD accept compressed responses
+- Agents SHOULD use streaming JSON parsers for large sitemaps and enforce a maximum sitemap size (e.g., 100 MB)
+
+**Example:
 - M-URL returns: `ETag: W/"sha256-2c26b46b..."`
 - Sitemap contains: `"contentHash": "sha256-2c26b46b..."`
 
@@ -583,13 +651,14 @@ else:
 
 # Publisher Policy Descriptor
 
-Publishers MAY provide a machine-readable policy descriptor at `/llm-policy.json` to communicate usage terms, rate limits, and content licensing preferences to automated agents.
+Publishers MAY provide a machine-readable policy descriptor at a well-known location (e.g., `/tct-policy.json` or `/llm-policy.json`) to communicate usage terms, rate limits, and content licensing preferences to automated agents. Example paths are non-normative.
 
 ## Policy Endpoint
 
-The policy descriptor SHOULD be available at:
+The policy descriptor SHOULD be available at a stable URL. Example paths (non-normative):
 
 ~~~
+https://example.com/tct-policy.json
 https://example.com/llm-policy.json
 ~~~
 
@@ -632,8 +701,8 @@ https://example.com/llm-policy.json
 
 - `profile` (string): Policy schema version identifier (e.g., "tct-policy-1")
 - `version` (integer): Policy revision number
-- `effective` (string, ISO 8601): When policy took effect
-- `updated` (string, ISO 8601): Last policy modification
+- `effective` (string, RFC 3339): When policy took effect
+- `updated` (string, RFC 3339): Last policy modification
 - `policy_urls` (object): URLs to human-readable policy documents
   - `terms_of_service`: Legal terms URL
   - `payment_info`: Pricing/billing information URL (for paid access)
@@ -651,12 +720,15 @@ https://example.com/llm-policy.json
   - `max_requests_per_day`: Requests per day limit
   - `note`: Additional guidance
 
+Rate hints are advisory only; enforcement, payment, and economic arrangements are out of scope for this specification. Vocabulary alignment with IETF AIPREF is expected as that work matures.
+
 ## Discovery
 
-The policy descriptor SHOULD be linked from the sitemap with a `describedby` Link header:
+The policy descriptor SHOULD be linked from the sitemap with a `describedby` Link header (example paths only):
 
 ~~~http
-Link: </llm-policy.json>; rel="describedby"
+Link: </tct-policy.json>; rel="describedby"; type="application/json"
+Link: </llm-policy.json>; rel="describedby"; type="application/json"
 ~~~
 
 Automated agents SHOULD:
@@ -700,7 +772,11 @@ Content-Type: application/json; charset=utf-8
 - `canonical_url` (string, required): The C-URL for this resource
 - `title` (string, required): Resource title
 - `content` (string, required): Core content text
-- `hash` (string, required): Template-invariant fingerprint (matches ETag value)
+- `hash` (string, required): Template-invariant fingerprint. MUST equal the ETag value excluding quotes and the `W/` weak prefix (e.g., if ETag is `W/"sha256-abc123"`, hash is `sha256-abc123`)
+
+**Forward Compatibility:**
+
+Clients MUST ignore unknown fields in the JSON payload. Servers MAY add additional fields to support future protocol versions or domain-specific metadata.
 
 **Extended fields example:**
 
@@ -732,7 +808,6 @@ Link: <https://example.com/post/>; rel="canonical"
 Last-Modified: Wed, 15 Oct 2025 14:30:00 GMT
 Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400
 Vary: Accept-Encoding
-Access-Control-Allow-Origin: *
 Content-Length: 1234
 
 {
@@ -746,6 +821,27 @@ Content-Length: 1234
   "hash": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 }
 ~~~
+
+# Operational Considerations (Informative)
+
+This section provides non-normative operational guidance for deployers and automated agents.
+
+**Migration and Path Collisions**
+- If a preferred slug (e.g., `/llm/`) collides with existing routes, choose an alternate (e.g., `/tct/`, `/api/tct/`) and publish a 308 Permanent Redirect from legacy to primary endpoints
+- List only the primary M-URL in the sitemap to avoid duplication; agents SHOULD follow redirects but rely on sitemap entries for canonical endpoint discovery
+- Ensure robots.txt permits the chosen machine paths as appropriate for your policy
+
+**Caching and CDNs**
+- Configure intermediaries to honor validators and serve 304 responses; avoid `private` on M-URLs and sitemaps to enable shared caching
+- Enable compression (gzip or br) for sitemaps and JSON payloads
+
+**Discovery and Verification**
+- Prefer discovery via HTML `<link rel="alternate" type="application/json">`, HTTP `Link` headers, or sitemap entries; agents MUST NOT assume a fixed path
+- Agents SHOULD verify the M-URL’s canonical link header before processing and skip ingestion if missing or mismatched
+
+**Network and WAFs**
+- Allow the HEAD method (some WAFs block by default) to enable efficient validation
+- If using an edge worker/proxy, ensure required headers (`Link`, `ETag`, `Cache-Control`, `Vary`) are preserved or injected consistently
 
 # Security Considerations
 
@@ -770,6 +866,8 @@ Sitemap exposure MAY reveal:
 Publishers SHOULD:
 - Apply access controls if sitemaps contain sensitive URLs
 - Use robots.txt to restrict crawler access if needed
+
+For general privacy considerations related to Internet protocols, see {{RFC6973}}.
 
 ## Denial of Service
 
@@ -825,7 +923,7 @@ M-URL JSON MAY contain personally identifiable information (PII) or sensitive co
 - Comply with applicable data protection regulations (GDPR, CCPA, etc.)
 
 Agents MUST:
-- Honor robots.txt and meta robots directives
+- Honor robots.txt and meta robots directives (agents SHOULD respect robots.txt as site-wide policy across all resources)
 - Respect HTTP authentication requirements
 - Not expose cached content beyond publisher-specified Cache-Control directives
 
@@ -838,6 +936,8 @@ Publishers MAY restrict M-URL access using standard HTTP mechanisms:
 - Geographic restrictions
 
 Access controls SHOULD be consistent between C-URL and M-URL for the same resource.
+
+**Security Note**: Authenticated M-URLs MUST NOT leak protected content via publicly accessible sitemaps. Publishers MUST either exclude protected resources from sitemaps or apply equivalent access controls to the sitemap itself.
 
 # Energy Efficiency Considerations
 
@@ -856,35 +956,16 @@ Data transmission consumes energy at every network layer: routers, switches, con
 
 **Energy savings per fetch:**
 - Bandwidth saved: 85.3 KB = 0.0000853 GB
-- Energy saved: 0.0000853 GB × 0.06 kWh/GB = **0.0000051 kWh** (5.1 Wh) per fetch
+- Energy saved: 0.0000853 GB x 0.06 kWh/GB = **0.0000051 kWh** (0.0051 Wh) per fetch
 
 **Scaled impact (1 million fetches/day):**
-- Daily energy savings: 5,100 kWh = 5.1 MWh
-- Annual energy savings: 1,861.5 MWh
-- **Carbon equivalent**: ~930 metric tons CO₂ avoided (assuming 0.5 kg CO₂/kWh grid average)
+- Daily energy savings: 5.1 kWh (5,100 Wh)
+- Annual energy savings: 1,861.5 kWh
+- **Carbon equivalent**: ~930 kg CO2 avoided (assuming 0.5 kg CO2/kWh grid average)
 
-## AI Model Inference Energy
+## AI Inference Impact (Informative Summary)
 
-Large language models consume substantial energy during inference operations. Token processing is the primary unit of computational cost, with recent measurements showing:
-
-- GPT-4 class models: ~0.000187 kWh per token (673.2 joules)
-- Average query energy: 0.3-0.5 kWh per response
-- Carbon emissions: ~0.09 grams CO₂ per token
-
-**TCT token reduction (measured):**
-- HTML token count: 13,900 tokens average
-- TCT JSON token count: 1,960 tokens average
-- **Reduction: 11,940 tokens per fetch (86% savings)**
-
-**Energy savings per AI query:**
-- Tokens saved: 11,940
-- Energy saved: 11,940 × 0.000187 kWh = **2.23 kWh** per query
-- Carbon saved: 11,940 × 0.09 g = **1,074.6 g CO₂** (1.07 kg) per query
-
-**Scaled impact (1 million AI queries/day):**
-- Daily energy savings: 2,230 MWh
-- Annual energy savings: 813,950 MWh
-- **Carbon equivalent**: ~406,975 metric tons CO₂ avoided
+TCT reduces tokenized payloads by ~86% through normalized JSON delivery. The impact on inference energy depends on model size, hardware, batching, and caching; therefore specific kWh figures vary significantly across deployments. See Appendix "Energy Methodology" for an illustrative, non-normative scenario and assumptions.
 
 ## Sitemap-First Zero-Fetch Optimization
 
@@ -898,33 +979,36 @@ For a typical deployment with 1,000 URLs checked daily:
 - **Additional savings: 900 fetches avoided**
 
 **Combined energy impact:**
-- Network energy saved: 900 × 5.1 Wh = **4.59 kWh/day** (1,675 kWh/year)
-- AI inference saved: 900 × 2.23 kWh = **2,007 kWh/day** (732,555 kWh/year)
+- Network: Fewer full responses reduce transmission energy proportionally to bytes avoided
+- Computation: Fewer fetches and elimination of local rendering/extraction reduce crawler CPU/memory work
+- Inference: Reduced token processing (impact varies by model and deployment; see Energy Methodology appendix)
 
 ## Comparison to Existing Approaches
 
-| Method | Avg Size | Tokens | Energy/Fetch* | Relative Efficiency |
-|--------|----------|--------|---------------|---------------------|
-| Full HTML page | 350 KB | 47,000 | 9.0 kWh | 1.0× (baseline) |
-| HTML body only | 103 KB | 13,900 | 2.6 kWh | 3.5× |
-| AMP HTML | 52 KB | 7,000 | 1.3 kWh | 6.9× |
-| **TCT JSON** | **17.7 KB** | **1,960** | **0.37 kWh** | **24.3×** |
+| Method | Avg Size | Tokens | Bandwidth Reduction |
+|--------|----------|--------|---------------------|
+| Full HTML page | 350 KB | 47,000 | Baseline |
+| HTML body only | 103 KB | 13,900 | 71% |
+| AMP HTML | 52 KB | 7,000 | 85% |
+| **TCT JSON** | **17.7 KB** | **1,960** | **95%** |
 
-*Combined network + AI inference energy
+Energy impact per fetch depends on network infrastructure, model architecture, and deployment patterns. See Energy Methodology appendix for illustrative calculations.
 
 ## Cumulative Environmental Impact
 
-If TCT achieves 10% adoption across the top 10,000 crawled websites by 2026 (estimated 10 billion daily AI crawler fetches):
+TCT's bandwidth reduction (typically 80-90%) and elimination of client-side rendering translate to measurable energy savings at scale. Actual impact depends on:
 
-**Annual energy savings:**
-- Network transmission: 18,615 MWh
-- AI model inference: 8,139,500 MWh
-- **Total: 8,158,115 MWh**
+- Deployment scope (number of sites, request volume)
+- Network infrastructure efficiency
+- Model provider's hardware and batching strategies
+- Grid carbon intensity in serving regions
 
-**Carbon emissions avoided:**
-- ~4,079,057 metric tons CO₂ equivalent
-- Equivalent to removing ~885,000 passenger vehicles from roads for one year
-- Requires a forest the size of Chicago to offset via traditional HTML delivery
+**Measured improvements:**
+- 95% smaller payloads (measured across production deployments)
+- 90%+ fetch elimination via sitemap-first logic
+- 94% reduction in crawler CPU/memory usage
+
+Organizations deploying TCT should measure baseline energy consumption and monitor post-deployment savings specific to their infrastructure. See Energy Methodology appendix for example calculation approaches.
 
 ## Relationship to IETF GREEN Working Group
 
@@ -979,7 +1063,7 @@ ResourceSync {{ResourceSync}} provides sitemap-based synchronization with conten
 **Key differences:**
 
 1. **Endpoint validator**: ResourceSync does NOT specify using the digest as endpoint ETag
-2. **Handshake**: No bidirectional C-URL ↔ M-URL discovery
+2. **Handshake**: No bidirectional C-URL <-> M-URL discovery
 3. **Zero-fetch**: No specification for skipping endpoint fetch when sitemap hash matches
 4. **Precedence discipline**: No requirement for If-None-Match precedence
 
@@ -988,7 +1072,7 @@ TCT integrates the SAME hash in both sitemap AND endpoint ETag, enabling zero-fe
 ## AMP
 
 Accelerated Mobile Pages {{AMP}} provides:
-- C-URL → AMP-URL mapping via `<link rel="amphtml">`
+- C-URL -> AMP-URL mapping via `<link rel="amphtml">`
 - Lighter HTML (no JavaScript allowed)
 
 **Key differences:**
@@ -1055,7 +1139,7 @@ function handle_llm_endpoint() {
   // Generate ETag
   $normalized = normalize_text($content);
   $hash = hash('sha256', $normalized);
-  $etag = "\"sha256-{$hash}\"";
+  $etag = "W/\"sha256-{$hash}\""; // weak ETag recommended for semantic fingerprints
 
   // Check If-None-Match
   if ($_SERVER['HTTP_IF_NONE_MATCH'] === $etag) {
@@ -1103,3 +1187,95 @@ This section is informative.
   ]
 }
 ~~~
+# Energy Methodology (Informative)
+
+**Scope**: This appendix provides illustrative, non-normative estimates to contextualize the potential energy impact of TCT deployment. Actual results will vary significantly based on infrastructure, model architecture, and deployment patterns.
+
+## Metrics and Sources
+
+**Network Energy Intensity:**
+- Range: 0.03-0.14 kWh/GB (varies by network type: fixed vs mobile)
+- Conservative estimate used: 0.06 kWh/GB (industry midpoint for mixed-mode transmission)
+- Variability: Actual consumption depends on routing, CDN utilization, and regional infrastructure
+
+**Crawler Computational Energy:**
+- Measured reductions from controlled benchmarks (primary evidence):
+  - CPU time: -94% (median)
+  - Memory usage: -95% (median)
+- Method: Headless browser + extraction vs direct TCT JSON retrieval
+- Limitations: Results vary by site complexity, extractor implementation, and hardware
+
+**AI Inference Energy:**
+- Highly variable: depends on model size (parameters), quantization, hardware (GPU/TPU type), batching, and prompt caching
+- No single authoritative figure exists; published estimates vary by 10x or more
+
+## Example Calculations
+
+**Network Energy (per fetch):**
+- Bandwidth saved: 85.3 KB = 0.0000853 GB
+- Energy saved: 0.0000853 GB x 0.06 kWh/GB = **0.0000051 kWh** (0.0051 Wh) per fetch
+
+**Scaled Network Impact (1 million fetches/day):**
+- Daily savings: 0.0000051 kWh x 1,000,000 = 5.1 kWh (5,100 Wh)
+- Annual savings: 1,861.5 kWh
+- Carbon equivalent (at 0.5 kg CO2/kWh grid average): ~930 kg CO2 avoided annually
+
+**AI Inference (Illustrative Scenario - Not Normative):**
+
+*Hypothetical assumptions for illustration only:*
+- Assume a model with energy cost E_token = 0.000187 kWh/token (one published estimate for large models)
+- TCT reduces tokens by 11,940 per fetch (measured from our benchmarks)
+- Estimated savings per query: 11,940 x 0.000187 kWh = 2.23 kWh per query
+
+*Sensitivity:*
+- If E_token = 0.0001 kWh (smaller model, better batching): savings ~ 1.19 kWh per query
+- If E_token = 0.0003 kWh (larger model, poor batching): savings ~ 3.58 kWh per query
+- **Range varies by 3x based on deployment parameters**
+
+*Important caveats:*
+1. Published per-token energy estimates vary widely and often lack transparency about measurement conditions
+2. Prompt caching, batching, and model quantization can reduce inference costs by 5-10x
+3. Token savings do not translate linearly to energy savings in all scenarios
+4. Use these figures only for order-of-magnitude context, not precise predictions
+
+## Uncertainty and Variability
+
+Results depend on:
+- **Hardware**: GPU/TPU model, fabrication node, power management
+- **Grid carbon intensity**: 0.2-0.9 kg CO2/kWh depending on region
+- **Model architecture**: Parameter count, attention mechanism, quantization
+- **Deployment patterns**: Batch size, request concurrency, cache hit rates
+- **Network path**: CDN caching, routing efficiency, edge compute
+
+## Reproducibility
+
+**Benchmark dataset:**
+- Multiple production sites with varying complexity
+- Representative URL samples across content types
+- Repeated runs (~3 per URL) with median values reported
+- Outliers inspected; clear anomalies excluded
+
+**Measurement environment:**
+- Stable network conditions
+- Same host for both methods (browser vs direct fetch)
+- Tools: Headless browser (Puppeteer/Playwright), standard HTTP clients
+
+**Reporting recommendations:**
+- Always report ranges and confidence intervals
+- State assumptions explicitly
+- Cite sources for energy intensity figures
+- Acknowledge deployment-specific variability
+
+## Recommendations for Operators
+
+When estimating TCT energy impact for your deployment:
+
+1. **Measure your baseline**: Actual HTML payload sizes and token counts
+2. **Use conservative estimates**: Start with proven network energy figures (0.06 kWh/GB)
+3. **Focus on measurable metrics**: Bandwidth reduction, 304 hit rates, skip rates
+4. **Report ranges**: Account for variability in model efficiency and batching
+5. **Update with real data**: Monitor actual savings post-deployment
+
+**Example conservative reporting:**
+> "TCT deployment reduced our network transfer volume by 83% (measured). Assuming network energy intensity of 0.06 kWh/GB, we estimate network energy savings of ~5 MWh annually. Inference energy impact depends on our model provider's infrastructure and is not separately quantified."
+
