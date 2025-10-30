@@ -109,7 +109,7 @@ informative:
 
 --- abstract
 
-This document specifies the Collaboration Tunnel Protocol, a method for efficient, verifiable content delivery between web publishers and automated agents. The protocol typically achieves 80-90% bandwidth reduction (83% median measured) through bidirectional URL discovery, template-invariant content fingerprinting, sitemap-first verification, and strict conditional request discipline.
+This document specifies the Collaboration Tunnel Protocol, a method for efficient, verifiable content delivery between web publishers and automated agents. The protocol typically achieves up to 90% bandwidth reduction (83% median measured) through bidirectional URL discovery, template-invariant content fingerprinting, sitemap-first verification, and strict conditional request discipline.
 
 --- middle
 
@@ -123,7 +123,7 @@ Existing approaches address portions of this problem:
 - AMP {{AMP}} reduces HTML overhead but lacks synchronized hashing
 - ResourceSync {{ResourceSync}} provides digest-based synchronization but lacks endpoint-level validator discipline
 
-The Collaboration Tunnel Protocol (TCT) integrates these concepts into a cohesive system optimized for machine consumption while preserving human-readable canonical URLs for SEO and web compatibility.
+The Collaboration Tunnel Protocol (TCT, also referred to as "collab-tunnel") integrates these concepts into a cohesive system optimized for machine consumption while preserving human-readable canonical URLs for SEO and web compatibility.
 
 ## Problem Statement
 
@@ -204,6 +204,7 @@ Implementations MUST:
    - Sitemap MUST include `contentHash` field for each URL
 
 3. **Conditional Requests**
+   - M-URL responses MUST use weak ETags for template-invariant fingerprints: `W/"sha256-<64-hex>"`
    - Server MUST honor `If-None-Match` header
    - Server MUST return `304 Not Modified` when ETag matches
    - Server MUST give `If-None-Match` precedence over `If-Modified-Since` ({{RFC9110, Section 13.1.2}})
@@ -238,6 +239,12 @@ Implementations MUST:
    - The comparison is a simple string equality check: `contentHash === cleanETag(ETag)`
    - Agents SHOULD NOT implement the normalization algorithm for compliance purposes; parity verification is sufficient
 
+10. **Content Pages Only**
+   - M-URL endpoints MUST NOT be provided for archive, category, tag, search, or date-based listing pages
+   - Servers MUST return HTTP 404 Not Found for such requests
+   - Sitemaps MUST include only content pages (posts, articles, pages)
+   - A homepage MAY be included only if it represents stable content
+
 
 ## SHOULD Recommendations
 
@@ -265,8 +272,8 @@ Implementations SHOULD:
 Implementations MAY:
 
 1. **Policy Descriptor**
-   - Provide machine-readable policy at `/llm-policy.json`
-   - Link policy via `Link: </llm-policy.json>; rel="describedby"; type="application/json"`
+   - Servers MAY advertise a machine-readable policy via `Link: </llm-policy.json>; rel="describedby"; type="application/json"`
+   - The policy document format is informative and out of scope for the core protocol (see Publisher Policy Descriptor section)
 
 2. **Additional Integrity**
    - Use `Content-Digest` header (RFC 9530)
@@ -322,12 +329,19 @@ Example:
 
 **Migration Note**: Publishers MAY use HTTP 308 Permanent Redirect to migrate from legacy paths to preferred endpoints and SHOULD list only the primary M-URL in the sitemap.
 
-**Discovery Hint**: Publishers MAY include a `Link` header on the homepage or C-URL HTML responses to advertise the sitemap location (example paths only):
+**Sitemap Discovery**:
+
+Publishers SHOULD advertise the sitemap via one or both of:
+
+1. **Link header** (RECOMMENDED) on the homepage or C-URL responses:
 
 ~~~http
-Link: </tct-sitemap.json>; rel="index"; type="application/json"
 Link: </llm-sitemap.json>; rel="index"; type="application/json"
 ~~~
+
+2. **Well-known URI** (OPTIONAL): Agents MAY check `/.well-known/llm-sitemap.json`
+
+Note: The well-known URI is not registered in IANA for -00; future versions may formalize this. Agents SHOULD try the Link header first, then fall back to well-known URI if needed.
 
 ## Content Pages Only
 
@@ -344,6 +358,15 @@ M-URL endpoints SHOULD be provided only for **content pages** (posts, articles, 
 - Publishers SHOULD return HTTP 404 for M-URL requests to archive pages
 - Sitemaps SHOULD include only content page URLs, not archives
 - Homepage MAY be included if it represents stable content
+
+**Dynamic Homepage Guidance:**
+
+If the homepage displays a dynamic content roll-up (e.g., recent posts, latest articles), publishers SHOULD prefer one of:
+
+- Provide a synthesized stable overview representing the site (name, description, purpose)
+- Include a stable "About" page as the first sitemap item instead of the homepage
+
+Rationale: Dynamic homepages change frequently and may not provide valuable semantic content for automated agents.
  - CMS guidance (non-normative): For platforms like WordPress, exclude archive-like routes (e.g., category, tag, search, date, author) from M-URL handling and return 404 rather than 200 with empty payload. Ensure only singular content types (posts, pages, articles) emit M-URLs and sitemap entries.
 
 **Content page examples:**
@@ -413,8 +436,8 @@ To generate the template-invariant fingerprint, the server MUST operate on the J
 1. Decode HTML Entities: Decode any HTML entities present in the content string (e.g., `&amp;` → `&`, `&#x2014;` → `—`)
 2. Apply Unicode Normalization: Apply Unicode Normalization Form KC (NFKC) as defined in Unicode Standard Annex #15
 3. Apply Unicode Case Folding: Convert to lowercase using the standard, locale-independent Unicode case-folding algorithm as defined in the Unicode Standard
-4. Remove Control Characters: Remove all characters in the Unicode general category "Control" (Cc), which includes characters U+0000 through U+001F (except tab, line feed, carriage return) and U+007F through U+009F
-5. Collapse Whitespace: Replace any sequence of one or more ASCII whitespace characters (U+0020 SPACE, U+0009 TAB, U+000A LINE FEED, U+000C FORM FEED, U+000D CARRIAGE RETURN) with a single ASCII SPACE (U+0020)
+4. Remove Control Characters: Remove all characters in the Unicode general category "Control" (Cc), which includes characters U+0000 through U+001F and U+007F through U+009F. Preserve only U+0009 (TAB), U+000A (LINE FEED), and U+000D (CARRIAGE RETURN) for subsequent whitespace collapsing.
+5. Collapse Whitespace: Replace any sequence of one or more ASCII whitespace characters (U+0020 SPACE, U+0009 TAB, U+000A LINE FEED, U+000D CARRIAGE RETURN) with a single ASCII SPACE (U+0020)
 6. Trim Whitespace: Remove any leading or trailing ASCII SPACE characters
 7. Compute Hash: Compute the SHA-256 hash over the resulting string (encoded as UTF-8)
 
@@ -442,7 +465,7 @@ Note: This normalization operates on the plain-text `content` field in the JSON 
 
 The M-URL response MUST include an `ETag` header containing the template-invariant fingerprint.
 
-**Weak ETag (RECOMMENDED):**
+**Weak ETag (REQUIRED):**
 
 ~~~http
 ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
@@ -462,7 +485,7 @@ ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 **Format Requirements:**
 - MUST start with `sha256-` prefix (after optional `W/"` weak prefix)
 - MUST contain 64 hexadecimal characters (256 bits)
-- Weak ETags SHOULD be used for semantic fingerprints
+- Weak ETags MUST be used for semantic fingerprints
  - See "Sitemap-First Verification" for the parity rule between endpoint ETag and sitemap `contentHash`
 
 **Note:** `If-Range` requests require strong ETags; servers MUST respond with `412 Precondition Failed` if a client sends `If-Range` with a weak ETag.
@@ -599,6 +622,10 @@ Publishers and agents SHOULD consider scalability for large sites:
 - Servers SHOULD support compression (e.g., `Content-Encoding: gzip` or `br`) for sitemap responses; agents SHOULD accept compressed responses
 - Agents SHOULD use streaming JSON parsers for large sitemaps and enforce a maximum sitemap size (e.g., 100 MB)
 
+**Sitemap Index (Large Sites):**
+
+For sites with thousands of URLs, publishers SHOULD segment sitemaps using a sitemap index (analogous to XML Sitemaps `sitemapindex`). A formal JSON sitemap index schema MAY be specified in future protocol versions. Agents SHOULD support consuming multiple sitemap files.
+
 **Homepage Handling:**
 
 Publishers SHOULD include the site homepage as the **first item** in the sitemap array. This provides automated agents with immediate access to site-level context (site name, description, purpose) before processing individual content pages.
@@ -707,6 +734,8 @@ else:
 ~~~
 
 # Publisher Policy Descriptor
+
+This section is informative.
 
 Publishers MAY provide a machine-readable policy descriptor at a well-known location (e.g., `/tct-policy.json` or `/llm-policy.json`) to communicate usage terms, rate limits, and content licensing preferences to automated agents. Example paths are non-normative.
 
@@ -829,7 +858,7 @@ Content-Type: application/json; charset=utf-8
 - `canonical_url` (string, required): The C-URL for this resource
 - `title` (string, required): Resource title
 - `content` (string, required): Plain‑text core content (UTF‑8). This field is the input to the normalization algorithm. The content field MUST NOT contain HTML tags or markup. Publishers MUST strip or escape any embedded HTML before inclusion. To ensure fingerprint stability, publishers SHOULD avoid including volatile, non‑semantic elements (e.g., dynamic view counts, timestamps) in this string. Publishers SHOULD provide content independent of template/theme presentation. Publishers MAY include semantic metadata (such as title or media captions) to create a more complete fingerprint.
-- `hash` (string, required): Template-invariant fingerprint. MUST equal the ETag value excluding quotes and the `W/` weak prefix (e.g., if ETag is `W/"sha256-abc123"`, hash is `sha256-abc123`). Format: `sha256-<64 hex>`.
+- `hash` (string, required): Template-invariant fingerprint. MUST equal the M-URL ETag value excluding the `W/` prefix and quotes. This is the same value as the sitemap `contentHash` field. Format: `sha256-<64 hex>`. Example: if M-URL ETag is `W/"sha256-abc123"`, then `hash` is `sha256-abc123` and sitemap `contentHash` is `sha256-abc123`.
 
 **Forward Compatibility:**
 
@@ -965,14 +994,21 @@ Shared caches that ignore validators can serve stale or mixed content. Publisher
 
 SHA-256 fingerprints provide practical collision resistance. The greater risk is normalization variance. Implementations MUST apply the baseline normalization consistently; agents MUST NOT infer byte identity from weak ETags.
 
-## Content Provenance (Optional)
+## Content Provenance and Origin Authentication (Optional)
+
+For authenticated origin verification of content representations, see HTTP Message Signatures {{RFC9421}}.
 
 Publishers MAY enhance content authenticity using:
 
 **Content-Digest (RFC 9530):**
+
+Provides base64-encoded digest over the representation body.
+
 ~~~http
 Content-Digest: sha-256=:X48E9qOokqqrvdts8nOJRJN3OWDUoyWxBf7kbu9DBPE=:
 ~~~
+
+Note: The value is base64 encoding of the binary SHA-256 digest per RFC 9530 Section 2.
 
 **HTTP Message Signatures (RFC 9421):**
 ~~~http
@@ -1124,9 +1160,13 @@ Potential enhancements for energy optimization:
 
 This document has no IANA actions.
 
-(Future versions may register:
-- Link relation type: `rel="machine-alternate"`
-- Well-known URI: `/.well-known/llm-sitemap.json`)
+Future versions may register:
+
+1. **Well-known URI**: `/.well-known/llm-sitemap.json` for sitemap discovery
+2. **Profile URI**: Identifying the JSON payload/sitemap format (e.g., `https://llmpages.org/profile/tct-1`)
+3. **Link Relation**: If `rel="index"` with `type="application/json"` proves insufficient, a dedicated relation may be registered
+
+Note: The protocol name and URL slug conventions (/llm/, /tct/) are non-normative; implementations choose their own paths.
 
 # Comparison to Prior Art
 
@@ -1175,6 +1215,13 @@ TCT adds content hashes enabling efficient change detection.
 # Implementation Status
 
 [Note to RFC Editor: Remove this section before publication.]
+
+**Reference Implementations:**
+
+- WordPress Plugin: https://github.com/antunjurkovic-collab/trusted-collab-tunnel
+- Python Client: https://github.com/antunjurkovic-collab/collab-tunnel-python
+- Cloudflare Worker: https://github.com/antunjurkovic-collab/trusted-collab-worker
+- Protocol Specification: https://github.com/antunjurkovic-collab/collab-tunnel-spec
 
 As of October 2025, TCT has been implemented in:
 
@@ -1309,6 +1356,16 @@ Test Vector 2: Entity and Unicode
 - SHA‑256 (hex): `f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24`
 - `contentHash`: `sha256-f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24`
 - `ETag`: `W/"sha256-f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24"`
+---
+
+Test Vector 3: Form Feed Handling
+- Input String: `Hello\fWorld\fTest` (literal: `Hello[U+000C]World[U+000C]Test`)
+- After Step 4 (Remove Cc): `HelloWorldTest` (Form Feed removed)
+- After Step 5 (Collapse ws): `HelloWorldTest` (no whitespace to collapse)
+- After Step 6 (Trim): `HelloWorldTest`
+- Normalized String: `helloworldtest`
+- SHA-256 (hex): `37e3e606a8ef37832e6a4a7a36ef2c6a6e4c5a6b6b3f3c3e3f3a3b3c3d3e3f40` (illustrative - compute actual)
+- Note: Form Feed (U+000C) is a control character removed in Step 4, not preserved for whitespace collapsing
 
 ---
 
