@@ -259,9 +259,9 @@ Implementations SHOULD:
    - Rationale: Content varies by compression (gzip, br)
 
 3. **Weak ETags**
-   - Prefer weak ETags (`W/"sha256-..."`) for semantic fingerprints
-   - Rationale: Template-invariant fingerprint is semantic, not byte-for-byte
-   - Note: Strong ETags acceptable if computed per representation variant
+   - Use weak ETags (`W/"sha256-..."`) for TCT semantic fingerprints (per MUST requirement #3)
+   - Rationale: Template-invariant fingerprint represents semantic equivalence, not byte-for-byte identity
+   - Note: Strong ETags MAY be used for representation-specific caching outside TCT parity (e.g., CDN byte-level caching)
 
 4. **Content Pages Only**
    - Return 404 for M-URL requests to archive pages
