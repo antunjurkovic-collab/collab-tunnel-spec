@@ -232,6 +232,12 @@ Implementations MUST:
 8. **Protected Sitemaps**
    - Sitemaps that list protected M-URLs MUST NOT be served without access controls equivalent to those applied to the corresponding M-URLs
 
+9. **Client Parity Behavior (Agents)**
+   - Agents MUST NOT attempt to recompute the fingerprint from C-URL HTML to verify parity
+   - Agents MUST verify parity by comparing the sitemap `contentHash` value to the M-URL `ETag` value (excluding quotes and any `W/` prefix)
+   - The comparison is a simple string equality check: `contentHash === cleanETag(ETag)`
+   - Agents SHOULD NOT implement the normalization algorithm for compliance purposes; parity verification is sufficient
+
 
 ## SHOULD Recommendations
 
@@ -354,49 +360,82 @@ M-URL endpoints SHOULD be provided only for **content pages** (posts, articles, 
 
 # Template-Invariant Fingerprinting
 
-## Normalization Algorithm
+## Publisher Source of Content (Informative)
 
-To generate a template-invariant fingerprint:
+The M-URL JSON payload SHOULD be produced from the platform's core content body (e.g., the WordPress post content field, a CMS article body), independent of the theme or template layer. This ensures the fingerprint is template-invariant.
 
-1. **Parse**: Extract core content from HTML (Article, main content region)
-2. **Filter**: Remove boilerplate (navigation, footer, sidebar, ads, scripts, styles)
-3. **Strip Tags**: Convert HTML to plain text
-To achieve interoperable fingerprints across implementations, the normalization step MUST, at a minimum:
+Publishers MAY include additional semantic text in the `content` field to make the fingerprint sensitive to changes in those elements. For example:
 
-4. **Normalize**:
-   - Decode HTML entities (e.g., &amp;; &#x2014;)
-   - Apply Unicode normalization (NFKC) and Unicode casefolding (locale-independent)
-   - Remove control characters (Unicode category Cc)
-   - Collapse whitespace runs to a single ASCII space
-   - Optionally normalize punctuation (e.g., map curly quotes to ASCII)
-   - Trim leading/trailing whitespace
-5. **Hash**: Compute SHA-256 of normalized text
+- Title: Including the resource title ensures title changes produce new fingerprints
+- Media descriptions: Including image alt text or <figcaption> content ensures accessibility metadata is tracked
+- Deterministic order: If multiple elements are included, use a consistent order (e.g., title, blank line, main content)
 
-**Example implementation (pseudocode):**
+Example reconstructed content:
 
 ~~~
-function generateFingerprint(html):
-  dom = parseHTML(html)
-  content = extractPrimaryContent(dom)  // <article>, <main>, etc.
-  text = stripTags(content)
+Understanding the Collaboration Tunnel Protocol
 
-  normalized = text
+The Collaboration Tunnel Protocol enables efficient content delivery.
+Diagram showing protocol flow. The protocol achieves 80-90% bandwidth
+reduction through conditional requests.
+~~~
+
+This approach balances template-invariance (content independent of presentation) with semantic completeness (title and media descriptions included). Publishers using this approach should ensure all included text goes through the same normalization pipeline defined in the next section.
+
+**Example of `content` Field Construction:**
+
+A publisher implementation might construct the `content` field by combining several data sources in a deterministic order.
+
+Input Data:
+- Title: `TCT Protocol Guide`
+- Body Paragraph 1: `The protocol is simple.`
+- Image Alt: `A flow diagram`
+- Body Paragraph 2: `It saves bandwidth.`
+
+Resulting `content` string in the JSON Payload:
+
+~~~
+TCT Protocol Guide
+
+The protocol is simple.
+
+[Image: A flow diagram]
+
+It saves bandwidth.
+~~~
+
+This creates a readable representation that is also a stable and reliable input for the fingerprinting algorithm.
+
+## Normalization Algorithm
+
+To generate the template-invariant fingerprint, the server MUST operate on the JSON payload's `content` field (not on the C-URL HTML), applying the following steps in order:
+
+1. Decode HTML Entities: Decode any HTML entities present in the content string (e.g., `&amp;` → `&`, `&#x2014;` → `—`)
+2. Apply Unicode Normalization: Apply Unicode Normalization Form KC (NFKC) as defined in Unicode Standard Annex #15
+3. Apply Unicode Case Folding: Convert to lowercase using the standard, locale-independent Unicode case-folding algorithm as defined in the Unicode Standard
+4. Remove Control Characters: Remove all characters in the Unicode general category "Control" (Cc), which includes characters U+0000 through U+001F (except tab, line feed, carriage return) and U+007F through U+009F
+5. Collapse Whitespace: Replace any sequence of one or more ASCII whitespace characters (U+0020 SPACE, U+0009 TAB, U+000A LINE FEED, U+000C FORM FEED, U+000D CARRIAGE RETURN) with a single ASCII SPACE (U+0020)
+6. Trim Whitespace: Remove any leading or trailing ASCII SPACE characters
+7. Compute Hash: Compute the SHA-256 hash over the resulting string (encoded as UTF-8)
+
+The weak ETag MUST be `W/"sha256-<64-hex-chars>"` from this hash. The sitemap `contentHash` MUST be `sha256-<64-hex-chars>` from the same hash (without the `W/` prefix and quotes).
+
+Example (pseudocode):
+
+~~~
+function generateFingerprint(contentString):
+  normalized = contentString
     .decodeEntities()
     .unicodeNormalize('NFKC')
     .casefold()
     .removeControlChars()
-    .replace(/\s+/g, ' ')
-    .normalizePunctuation()
+    .collapseWhitespace()
     .trim()
 
   return "sha256-" + sha256(normalized)
 ~~~
 
-**Note**: This is illustrative pseudocode. Production implementations must use global replacement for all normalization patterns, handle Unicode edge cases, and select appropriate content extraction strategies for their platform.
-
-**Core Content Extraction Consistency**: Core content extraction (e.g., selecting the `<article>` or `<main>` region) is implementation-defined, but for a given resource it MUST be consistent across updates to ensure stable fingerprinting.
-
-**Punctuation Normalization**: Punctuation normalization is OPTIONAL. Agents MUST NOT assume punctuation normalization when comparing endpoint `ETag` values to sitemap `contentHash` values.
+Note: This normalization operates on the plain-text `content` field in the JSON payload, not on HTML from the C-URL.
 
 
 ## ETag Generation
@@ -445,8 +484,7 @@ When both `If-None-Match` and `If-Modified-Since` headers are present, servers M
 When the ETag matches the `If-None-Match` value:
 
 1. Server MUST respond with `304 Not Modified`
-2. Response MUST NOT include a message body
-3. Response MUST include `ETag` header; SHOULD include `Last-Modified` and `Cache-Control` headers
+2. Response MUST NOT include a message body and MUST include `ETag`; SHOULD include `Last-Modified` and `Cache-Control`
 
 **Example:**
 
@@ -516,6 +554,8 @@ This enables efficient validation without transferring the full response body.
 
 Publishers SHOULD provide a machine-readable sitemap at a well-known location (e.g., `/llm-sitemap.json`).
 
+Publishers MAY also include a `Sitemap:` directive in `robots.txt` pointing to the JSON sitemap; agents MAY use it as a discovery hint. If both XML and JSON sitemaps are present, agents that implement this protocol SHOULD prefer the JSON sitemap for TCT.
+
 **Schema:**
 
 ~~~json
@@ -545,7 +585,7 @@ Publishers SHOULD provide a machine-readable sitemap at a well-known location (e
 
 **Parity Rule:**
 
-The sitemap `contentHash` value MUST match the M-URL `ETag` header value, excluding quotes and the `W/` weak prefix.
+The sitemap `contentHash` value MUST match the M-URL `ETag` header value, excluding quotes and the `W/` weak prefix. This enables zero-fetch skip optimization: clients compare sitemap hash to cached ETag without fetching the M-URL.
 
 **Forward Compatibility:**
 
@@ -558,11 +598,6 @@ Publishers and agents SHOULD consider scalability for large sites:
 - Publishers MAY split sitemaps into an index (a sitemap-of-sitemaps) to segment large URL sets (analogous to XML Sitemaps sitemapindex)
 - Servers SHOULD support compression (e.g., `Content-Encoding: gzip` or `br`) for sitemap responses; agents SHOULD accept compressed responses
 - Agents SHOULD use streaming JSON parsers for large sitemaps and enforce a maximum sitemap size (e.g., 100 MB)
-
-- M-URL returns: `ETag: W/"sha256-2c26b46b..."`
-- Sitemap contains: `"contentHash": "sha256-2c26b46b..."`
-
-This enables zero-fetch skip optimization: clients compare sitemap hash to cached ETag without fetching the M-URL.
 
 **Homepage Handling:**
 
@@ -627,6 +662,14 @@ Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60
 ~~~
 
 Clients SHOULD use conditional requests for sitemap to avoid unnecessary bandwidth when sitemap unchanged.
+
+## Error Handling (Informative)
+
+**Malformed sitemap:** Agents SHOULD treat this as non-fatal; skip entries that fail structural validation; log and continue.
+
+**ETag/contentHash mismatch:** Agents SHOULD treat the endpoint ETag as authoritative, process the change, and update caches. Publishers SHOULD publish sitemaps atomically or include `Last-Modified`.
+
+**M-URL unavailable:** Agents MAY defer the fetch or fall back to the C-URL HTML as a last resort; publishers SHOULD return a 4xx/5xx rather than an empty 200.
 
 ## Zero-Fetch Skip Logic
 
@@ -776,7 +819,7 @@ Content-Type: application/json; charset=utf-8
   "canonical_url": "https://example.com/post/",
   "title": "Article Title",
   "content": "Core article content...",
-  "hash": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+  "hash": "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 }
 ~~~
 
@@ -785,8 +828,8 @@ Content-Type: application/json; charset=utf-8
 - `profile` (string, RECOMMENDED): Protocol version identifier (e.g., "tct-1"). Future versions (e.g., "tct-2") can introduce new fields while maintaining backward compatibility.
 - `canonical_url` (string, required): The C-URL for this resource
 - `title` (string, required): Resource title
-- `content` (string, required): Core content text
-- `hash` (string, required): Template-invariant fingerprint. MUST equal the ETag value excluding quotes and the `W/` weak prefix (e.g., if ETag is `W/"sha256-abc123"`, hash is `sha256-abc123`)
+- `content` (string, required): Plain‑text core content (UTF‑8). This field is the input to the normalization algorithm. The content field MUST NOT contain HTML tags or markup. Publishers MUST strip or escape any embedded HTML before inclusion. To ensure fingerprint stability, publishers SHOULD avoid including volatile, non‑semantic elements (e.g., dynamic view counts, timestamps) in this string. Publishers SHOULD provide content independent of template/theme presentation. Publishers MAY include semantic metadata (such as title or media captions) to create a more complete fingerprint.
+- `hash` (string, required): Template-invariant fingerprint. MUST equal the ETag value excluding quotes and the `W/` weak prefix (e.g., if ETag is `W/"sha256-abc123"`, hash is `sha256-abc123`). Format: `sha256-<64 hex>`.
 
 **Forward Compatibility:**
 
@@ -803,7 +846,7 @@ Clients MUST ignore unknown fields in the JSON payload. Servers MAY add addition
   "published": "2025-10-01T10:00:00Z",
   "modified": "2025-10-15T14:30:00Z",
   "content": "Core article content...",
-  "hash": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+  "hash": "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
   "structured_data": {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -832,7 +875,7 @@ Content-Length: 1234
   "published": "2025-10-01T10:00:00Z",
   "modified": "2025-10-15T14:30:00Z",
   "content": "The Collaboration Tunnel Protocol enables...",
-  "hash": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+  "hash": "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 }
 ~~~
 
@@ -881,6 +924,8 @@ Publishers SHOULD:
 - Apply access controls if sitemaps contain sensitive URLs
 - Use robots.txt to restrict crawler access if needed
 
+The `content` field may contain sensitive or personally identifiable information (PII). Publishers MUST apply access controls to M-URLs equivalent to those applied to the corresponding C-URLs, and to any sitemaps listing protected resources (see “Protected Sitemaps” in MUST Requirements).
+
 For general privacy considerations related to Internet protocols, see {{RFC6973}}.
 
 ## Denial of Service
@@ -911,6 +956,14 @@ However, agents MUST:
 - Validate JSON syntax before processing
 - Sanitize content before rendering to users
 - Treat URLs in JSON as untrusted input
+
+## Cache Poisoning
+
+Shared caches that ignore validators can serve stale or mixed content. Publishers SHOULD include `Cache-Control: must-revalidate`; agents SHOULD verify the endpoint ETag against cached values and MUST NOT treat mismatched ETags as fresh.
+
+## Fingerprint Collision and Normalization Variance
+
+SHA-256 fingerprints provide practical collision resistance. The greater risk is normalization variance. Implementations MUST apply the baseline normalization consistently; agents MUST NOT infer byte identity from weak ETags.
 
 ## Content Provenance (Optional)
 
@@ -1090,6 +1143,8 @@ ResourceSync {{ResourceSync}} provides sitemap-based synchronization with conten
 
 TCT integrates the SAME hash in both sitemap AND endpoint ETag, enabling zero-fetch optimization.
 
+Unlike ResourceSync, which provides digests over entire representation files, TCT provides a semantic fingerprint of the textual `content` payload, decoupling it from a specific file or HTML representation.
+
 ## AMP
 
 Accelerated Mobile Pages {{AMP}} provides:
@@ -1151,19 +1206,27 @@ This section is informative.
 
 ~~~php
 function handle_llm_endpoint() {
-  $canonical_url = remove_suffix($_SERVER['REQUEST_URI'], '/llm/');
+  // Get the current post
+  $post_id = get_the_ID();
 
-  // Extract core content
-  $html = get_canonical_html($canonical_url);
-  $content = extract_core_content($html);
+  // Build content string (plain text, no HTML)
+  $title = get_the_title($post_id);
+  $body = apply_filters('the_content', get_post_field('post_content', $post_id));
+  $body_text = wp_strip_all_tags($body);
 
-  // Generate ETag
+  // Combine with deterministic separator
+  $content = $title . "\n\n" . $body_text;
+
+  // Generate ETag from content string
   $normalized = normalize_text($content);
-  $hash = hash('sha256', $normalized);
-  $etag = "W/\"sha256-{$hash}\""; // weak ETag recommended for semantic fingerprints
+  $hash_hex = hash('sha256', $normalized);
+  $hash = "sha256-{$hash_hex}";
+  $etag = "W/\"{$hash}\"";
+
+  $canonical_url = get_permalink($post_id);
 
   // Check If-None-Match
-  if ($_SERVER['HTTP_IF_NONE_MATCH'] === $etag) {
+  if (isset($_SERVER['HTTP_IF_NONE_MATCH']) && trim($_SERVER['HTTP_IF_NONE_MATCH']) === $etag) {
     header('HTTP/1.1 304 Not Modified');
     header("ETag: {$etag}");
     header("Link: <{$canonical_url}>; rel=\"canonical\"");
@@ -1178,10 +1241,27 @@ function handle_llm_endpoint() {
   header('Vary: Accept-Encoding');
 
   echo json_encode([
+    'profile' => 'tct-1',
     'canonical_url' => $canonical_url,
+    'title' => $title,
     'content' => $content,
     'hash' => $hash
   ]);
+}
+// Minimal normalization helper used above
+function normalize_text($text) {
+  $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+  if (class_exists('Normalizer')) {
+    $text = Normalizer::normalize($text, Normalizer::NFKC);
+  }
+  if (function_exists('mb_convert_case')) {
+    $text = mb_convert_case($text, MB_CASE_FOLD, 'UTF-8');
+  } else {
+    $text = strtolower($text);
+  }
+  $text = preg_replace('/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/u', '', $text);
+  $text = preg_replace('/[ \t\n\r\f]+/', ' ', $text);
+  return trim($text);
 }
 ~~~
 
@@ -1208,6 +1288,30 @@ This section is informative.
   ]
 }
 ~~~
+# Normalization Test Vectors (Informative)
+
+This appendix provides test vectors to assist implementers in validating normalization logic. The final hash MUST be an exact byte‑for‑byte match of the normalized string encoded as UTF‑8.
+
+---
+
+Test Vector 1: Basic ASCII with Whitespace
+- Input String: literal `Hello␠␠World\n\t\nTesting` (two spaces, newline, tab, newline)
+- Normalized String: `hello world testing`
+- SHA‑256 (hex): `479045cd11cebe841bab15d5ffba3dbac4fed0ca5c4eb74d1102e562a45f4f1f`
+- `contentHash`: `sha256-479045cd11cebe841bab15d5ffba3dbac4fed0ca5c4eb74d1102e562a45f4f1f`
+- `ETag`: `W/"sha256-479045cd11cebe841bab15d5ffba3dbac4fed0ca5c4eb74d1102e562a45f4f1f"`
+
+---
+
+Test Vector 2: Entity and Unicode
+- Input String (literal): `Test &amp; Unicode: café—`
+- Normalized String: `test & unicode: café—`
+- SHA‑256 (hex): `f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24`
+- `contentHash`: `sha256-f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24`
+- `ETag`: `W/"sha256-f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24"`
+
+---
+
 # Energy Methodology (Informative)
 
 **Scope**: This appendix provides illustrative, non-normative estimates to contextualize the potential energy impact of TCT deployment. Actual results will vary significantly based on infrastructure, model architecture, and deployment patterns.
