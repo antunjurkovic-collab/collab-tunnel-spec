@@ -285,7 +285,7 @@ Implementations MAY:
 
 # Bidirectional Discovery
 
-Note: Path names in examples are non-normative. This specification does not require any specific URL paths. Examples such as "/llm/" and "/tct/" are illustrative. Servers MAY choose alternative slugs or publish mappings. Agents MUST NOT assume a fixed path and SHOULD discover M-URLs via HTML `rel="alternate"`, HTTP `Link` headers, or the JSON sitemap.
+Note: Path names in examples are non-normative. This specification does not require any specific URL paths. Example path "/llm/" is illustrative. Servers MAY choose alternative slugs or publish mappings. Agents MUST NOT assume a fixed path and SHOULD discover M-URLs via HTML `rel="alternate"`, HTTP `Link` headers, or the JSON sitemap.
 
 ## C-URL to M-URL Mapping
 
@@ -317,14 +317,14 @@ This establishes bidirectional verification and prevents SEO duplication.
 
 M-URLs SHOULD follow a deterministic pattern from C-URLs.
 
-**Non-normative examples**: Append a slug to the C-URL path, such as `/tct/` or `/llm/`.
+**Non-normative examples**: Append a slug to the C-URL path, such as `/llm/`.
 
 Example:
 - C-URL: `https://example.com/post/`
-- M-URL: `https://example.com/post/tct/` (or `.../llm/`)
+- M-URL: `https://example.com/post/llm/`
 
 **Guidance**:
-- These path patterns are examples, not protocol requirements. If a preferred slug collides with existing site routes, publishers MAY choose an alternate (e.g., `/tct/`, `/api/tct/`) or publish a mapping in a site-level manifest.
+- These path patterns are examples, not protocol requirements. If a preferred slug collides with existing site routes, publishers MAY choose an alternate (e.g., `/api/llm/`, `/content/llm/`) or publish a mapping in a site-level manifest.
 - Agents MUST NOT assume a fixed path. Agents SHOULD discover M-URLs via HTML `<link rel="alternate" type="application/json">`, HTTP `Link` headers, or the JSON sitemap.
 
 **Migration Note**: Publishers MAY use HTTP 308 Permanent Redirect to migrate from legacy paths to preferred endpoints and SHOULD list only the primary M-URL in the sitemap.
@@ -465,22 +465,17 @@ Note: This normalization operates on the plain-text `content` field in the JSON 
 
 The M-URL response MUST include an `ETag` header containing the template-invariant fingerprint.
 
-**Weak ETag (REQUIRED):**
+**Weak ETag (REQUIRED for TCT):**
 
 ~~~http
 ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 ~~~
 
-**Strong ETag (acceptable):**
-
-~~~http
-ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
-~~~
-
 **Rationale:**
 - Template-invariant fingerprints represent semantic equivalence, not byte-for-byte identity
-- Weak ETags (`W/"..."`) better express this semantic validator property
-- Strong ETags acceptable if computed per representation variant (including compression)
+- Weak ETags (`W/"..."`) express this semantic validator property per RFC 9110 Section 8.8.1
+- TCT parity validation MUST use weak ETags for the semantic fingerprint
+- Strong ETags MAY be used for representation-specific caching outside TCT parity (e.g., CDN byte-level caching)
 
 **Format Requirements:**
 - MUST start with `sha256-` prefix (after optional `W/"` weak prefix)
@@ -737,14 +732,14 @@ else:
 
 This section is informative.
 
-Publishers MAY provide a machine-readable policy descriptor at a well-known location (e.g., `/tct-policy.json` or `/llm-policy.json`) to communicate usage terms, rate limits, and content licensing preferences to automated agents. Example paths are non-normative.
+Publishers MAY provide a machine-readable policy descriptor at a well-known location (e.g., `/llm-policy.json` or `/llm-policy.json`) to communicate usage terms, rate limits, and content licensing preferences to automated agents. Example paths are non-normative.
 
 ## Policy Endpoint
 
 The policy descriptor SHOULD be available at a stable URL. Example paths (non-normative):
 
 ~~~
-https://example.com/tct-policy.json
+https://example.com/llm-policy.json
 https://example.com/llm-policy.json
 ~~~
 
@@ -813,7 +808,7 @@ Rate hints are advisory only; enforcement, payment, and economic arrangements ar
 The policy descriptor SHOULD be linked from the sitemap with a `describedby` Link header (example paths only):
 
 ~~~http
-Link: </tct-policy.json>; rel="describedby"; type="application/json"
+Link: </llm-policy.json>; rel="describedby"; type="application/json"
 Link: </llm-policy.json>; rel="describedby"; type="application/json"
 ~~~
 
@@ -913,7 +908,7 @@ Content-Length: 1234
 This section provides non-normative operational guidance for deployers and automated agents.
 
 **Migration and Path Collisions**
-- If a preferred slug (e.g., `/llm/`) collides with existing routes, choose an alternate (e.g., `/tct/`, `/api/tct/`) and publish a 308 Permanent Redirect from legacy to primary endpoints
+- If a preferred slug (e.g., `/llm/`) collides with existing routes, choose an alternate (e.g., `/api/llm/`, `/content/llm/`) and publish a 308 Permanent Redirect from legacy to primary endpoints
 - List only the primary M-URL in the sitemap to avoid duplication; agents SHOULD follow redirects but rely on sitemap entries for canonical endpoint discovery
 - Ensure robots.txt permits the chosen machine paths as appropriate for your policy
 
@@ -1166,7 +1161,7 @@ Future versions may register:
 2. **Profile URI**: Identifying the JSON payload/sitemap format (e.g., `https://llmpages.org/profile/tct-1`)
 3. **Link Relation**: If `rel="index"` with `type="application/json"` proves insufficient, a dedicated relation may be registered
 
-Note: The protocol name and URL slug conventions (/llm/, /tct/) are non-normative; implementations choose their own paths.
+Note: The protocol name and URL slug convention (/llm/) is a non-normative example; implementations choose their own paths.
 
 # Comparison to Prior Art
 
@@ -1364,7 +1359,9 @@ Test Vector 3: Form Feed Handling
 - After Step 5 (Collapse ws): `HelloWorldTest` (no whitespace to collapse)
 - After Step 6 (Trim): `HelloWorldTest`
 - Normalized String: `helloworldtest`
-- SHA-256 (hex): `37e3e606a8ef37832e6a4a7a36ef2c6a6e4c5a6b6b3f3c3e3f3a3b3c3d3e3f40` (illustrative - compute actual)
+- SHA-256 (hex): `a869aef68aa3474f125dd9d5b731f6cc1495a6fbafa5de63f55bc79faf75d9f8`
+- `contentHash`: `sha256-a869aef68aa3474f125dd9d5b731f6cc1495a6fbafa5de63f55bc79faf75d9f8`
+- `ETag`: `W/"sha256-a869aef68aa3474f125dd9d5b731f6cc1495a6fbafa5de63f55bc79faf75d9f8"`
 - Note: Form Feed (U+000C) is a control character removed in Step 4, not preserved for whitespace collapsing
 
 ---
