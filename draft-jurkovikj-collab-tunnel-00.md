@@ -59,6 +59,14 @@ normative:
     date: 2017-05
     target: https://www.rfc-editor.org/rfc/rfc8174
 
+  RFC3339:
+    title: Date and Time on the Internet: Timestamps
+    author:
+      - name: G. Klyne
+      - name: C. Newman
+    date: 2002-07
+    target: https://www.rfc-editor.org/rfc/rfc3339
+
 informative:
   RFC9530:
     title: Digest Fields
@@ -208,7 +216,7 @@ Implementations MUST:
    - Server MUST honor `If-None-Match` header
    - Server MUST return `304 Not Modified` when ETag matches
    - Server MUST give `If-None-Match` precedence over `If-Modified-Since` ({{RFC9110, Section 13.1.2}})
-   - Server MUST respond with `412 Precondition Failed` when `If-Range` is sent with a weak ETag ({{RFC9110, Section 13.1.5}})
+   - If-Range requires a strong validator. If the If-Range validator is weak or does not match, the server MUST ignore the Range header and send `200 OK` with the full representation (per {{RFC9110, Section 13.1.5}})
 
 4. **304 Response**
    - Response MUST NOT include message body
@@ -217,8 +225,10 @@ Implementations MUST:
 
 5. **HEAD Support**
    - Servers SHOULD support HEAD requests for all M-URLs and sitemaps
-   - HEAD request MUST return same headers as GET
-   - HEAD request MUST NOT include message body
+   - HEAD responses MUST return the same validators and cache headers as GET and MUST NOT include a message body
+   - Body-dependent headers (e.g., Content-Length) MAY reflect the size of the corresponding GET response
+   - This behavior applies across HTTP/1.1, HTTP/2, and HTTP/3
+   - Implementations MUST avoid hop-by-hop headers on M-URLs and sitemaps and MUST NOT use transfer-codings or trailers on these responses
 
 6. **Sitemap Parity**
    - Sitemap `contentHash` value MUST equal M-URL `ETag` value (excluding quotes and `W/` prefix)
@@ -483,7 +493,7 @@ ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
 - Weak ETags MUST be used for semantic fingerprints
  - See "Sitemap-First Verification" for the parity rule between endpoint ETag and sitemap `contentHash`
 
-**Note:** `If-Range` requests require strong ETags; servers MUST respond with `412 Precondition Failed` if a client sends `If-Range` with a weak ETag.
+**Note:** If-Range requires a strong validator. If the If-Range validator is weak or does not match, the server MUST ignore the Range header and send `200 OK` with the full representation (per RFC 9110 Section 13.1.5).
 
 # Conditional Request Discipline
 
@@ -502,7 +512,7 @@ When both `If-None-Match` and `If-Modified-Since` headers are present, servers M
 When the ETag matches the `If-None-Match` value:
 
 1. Server MUST respond with `304 Not Modified`
-2. Response MUST NOT include a message body and MUST include `ETag`; SHOULD include `Last-Modified` and `Cache-Control`
+2. Response MUST NOT include a message body. Servers MUST include ETag if the corresponding 200 OK would include it; otherwise SHOULD include ETag. Servers SHOULD include Cache-Control and MAY include Last-Modified
 
 **Example:**
 

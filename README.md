@@ -63,6 +63,7 @@ The Collaboration Tunnel Protocol consists of four coordinated mechanisms:
 - Then compute SHA-256 hash over normalized UTF-8 bytes
 - Weak ETag format: `W/"sha256-..."`
 - Stable across theme/template changes
+- **Parity-only clients:** Verify equality of sitemap contentHash, clean(ETag), and payload.hash; do not recompute from HTML
 
 ### 3. Conditional Request Discipline
 - If-None-Match takes precedence
@@ -80,12 +81,11 @@ The Collaboration Tunnel Protocol consists of four coordinated mechanisms:
 ```json
 {
   "profile": "tct-1",
-  "llm_url": "https://example.com/post/llm/",
   "canonical_url": "https://example.com/post/",
-  "hash": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "title": "Article Title",
-  "content": { "text": "Article content..." },
-  "modified": "2025-10-23T18:00:00Z"
+  "content": "Core article content...",
+  "hash": "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+  "modified": "2025-10-15T14:30:00Z"
 }
 ```
 
