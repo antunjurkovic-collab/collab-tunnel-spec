@@ -7,7 +7,7 @@
 
 ## Abstract
 
-The Collaboration Tunnel Protocol enables efficient, verifiable content delivery between web publishers and automated agents, achieving 60-90% bandwidth reduction through bidirectional URL discovery, template-invariant content fingerprinting, sitemap-first verification, and strict conditional request discipline.
+The Collaboration Tunnel Protocol enables efficient, verifiable content delivery between web publishers and automated agents, achieving up to 90% bandwidth reduction through bidirectional URL discovery, template-invariant content fingerprinting, sitemap-first verification, and strict conditional request discipline.
 
 ## Specification
 
@@ -53,14 +53,14 @@ The Collaboration Tunnel Protocol consists of four coordinated mechanisms:
 - Prevents SEO conflicts
 
 ### 2. Template-Invariant Fingerprinting
-- Content normalized through 7-step pipeline:
-  1. Strip HTML tags and script/style elements
-  2. Decode HTML entities (&amp; → &, &#x2014; → —)
-  3. Convert to lowercase (Unicode-aware)
-  4. Collapse whitespace to single space (\s+ → " ")
-  5. Remove punctuation/symbols (Unicode P,S categories)
+- Content normalized through 6-step pipeline (operates on JSON `content` field, not HTML):
+  1. Decode HTML entities (&amp; → &, &#x2014; → —)
+  2. Apply Unicode NFKC normalization
+  3. Apply Unicode case folding (locale-independent lowercase)
+  4. Remove control characters (Unicode category Cc), except TAB, LF, CR
+  5. Collapse ASCII whitespace (SPACE, TAB, LF, CR) to single space
   6. Trim leading/trailing whitespace
-  7. Compute SHA-256 hash
+- Then compute SHA-256 hash over normalized UTF-8 bytes
 - Weak ETag format: `W/"sha256-..."`
 - Stable across theme/template changes
 
