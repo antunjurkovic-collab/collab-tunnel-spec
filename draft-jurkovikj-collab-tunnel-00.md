@@ -742,7 +742,7 @@ else:
 
 This section is informative.
 
-Publishers MAY provide a machine-readable policy descriptor at a well-known location (e.g., `/llm-policy.json` or `/llm-policy.json`) to communicate usage terms, rate limits, and content licensing preferences to automated agents. Example paths are non-normative.
+Publishers MAY provide a machine-readable policy descriptor at a well-known location (e.g., `/llm-policy.json` or `/.well-known/llm-policy.json`) to communicate usage terms, rate limits, and content licensing preferences to automated agents. Example paths are non-normative.
 
 ## Policy Endpoint
 
@@ -750,7 +750,7 @@ The policy descriptor SHOULD be available at a stable URL. Example paths (non-no
 
 ~~~
 https://example.com/llm-policy.json
-https://example.com/llm-policy.json
+https://example.com/.well-known/llm-policy.json
 ~~~
 
 ## JSON Schema
@@ -818,7 +818,6 @@ Rate hints are advisory only; enforcement, payment, and economic arrangements ar
 The policy descriptor SHOULD be linked from the sitemap with a `describedby` Link header (example paths only):
 
 ~~~http
-Link: </llm-policy.json>; rel="describedby"; type="application/json"
 Link: </llm-policy.json>; rel="describedby"; type="application/json"
 ~~~
 
