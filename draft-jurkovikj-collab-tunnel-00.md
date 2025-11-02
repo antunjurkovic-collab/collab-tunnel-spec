@@ -212,7 +212,7 @@ Implementations MUST:
    - Sitemap MUST include `contentHash` field for each URL
 
 3. **Conditional Requests**
-   - M-URL responses MUST use weak ETags for template-invariant fingerprints: `W/"sha256-<64-hex>"`
+   - M-URL responses MUST use strong ETags for template-invariant fingerprints: `"sha256-<64-hex>"`
    - Server MUST honor `If-None-Match` header
    - Server MUST return `304 Not Modified` when ETag matches
    - Server MUST give `If-None-Match` precedence over `If-Modified-Since` ({{RFC9110, Section 13.1.2}})
@@ -231,8 +231,8 @@ Implementations MUST:
    - Implementations MUST avoid hop-by-hop headers on M-URLs and sitemaps and MUST NOT use transfer-codings or trailers on these responses
 
 6. **Sitemap Parity**
-   - Sitemap `contentHash` value MUST equal M-URL `ETag` value (excluding quotes and `W/` prefix)
-   - Example: M-URL ETag `W/"sha256-abc"` -> Sitemap contentHash `sha256-abc`
+   - Sitemap `contentHash` value MUST equal M-URL `ETag` value (excluding quotes)
+   - Example: M-URL ETag `"sha256-abc"` -> Sitemap contentHash `sha256-abc`
    - See "Template-Invariant Fingerprinting" and "ETag Generation" for computation and format details
 
 7. **Canonical Verification (Agents)**
@@ -245,7 +245,7 @@ Implementations MUST:
 
 9. **Client Parity Behavior (Agents)**
    - Agents MUST NOT attempt to recompute the fingerprint from C-URL HTML to verify parity
-   - Agents MUST verify parity by comparing the sitemap `contentHash` value to the M-URL `ETag` value (excluding quotes and any `W/` prefix)
+   - Agents MUST verify parity by comparing the sitemap `contentHash` value to the M-URL `ETag` value (excluding quotes)
    - The comparison is a simple string equality check: `contentHash === cleanETag(ETag)`
    - Agents SHOULD NOT implement the normalization algorithm for compliance purposes; parity verification is sufficient
 
@@ -268,9 +268,9 @@ Implementations SHOULD:
    - Include: `Vary: Accept-Encoding`
    - Rationale: Content varies by compression (gzip, br)
 
-3. **Weak ETags**
-   - Use weak ETags (`W/"sha256-..."`) for TCT semantic fingerprints (per MUST requirement #3)
-   - Rationale: Template-invariant fingerprint represents semantic equivalence, not byte-for-byte identity
+3. **Strong ETags**
+   - Use strong ETags (`"sha256-..."`) for TCT semantic fingerprints (per MUST requirement #3)
+   - Rationale: Normalized content produces byte-identical JSON responses; strong validators ensure reliable cache compatibility
    - Note: Strong ETags MAY be used for representation-specific caching outside TCT parity (e.g., CDN byte-level caching)
 
 4. **Content Pages Only**
@@ -451,7 +451,7 @@ To generate the template-invariant fingerprint, the server MUST operate on the J
 6. Trim Whitespace: Remove any leading or trailing ASCII SPACE characters
 7. Compute Hash: Compute the SHA-256 hash over the resulting string (encoded as UTF-8)
 
-The weak ETag MUST be `W/"sha256-<64-hex-chars>"` from this hash. The sitemap `contentHash` MUST be `sha256-<64-hex-chars>` from the same hash (without the `W/` prefix and quotes).
+The strong ETag MUST be `"sha256-<64-hex-chars>"` from this hash. The sitemap `contentHash` MUST be `sha256-<64-hex-chars>` from the same hash (without the `W/` prefix and quotes).
 
 Example (pseudocode):
 
@@ -471,29 +471,79 @@ function generateFingerprint(contentString):
 Note: This normalization operates on the plain-text `content` field in the JSON payload, not on HTML from the C-URL.
 
 
+
+
+## Hash Computation (Content-Based, Not Envelope-Based)
+
+The TCT hash represents content identity, not representation identity.
+
+**Computation Flow:**
+
+1. Extract content (title + body text) from the CMS resource (theme-independent)
+2. Normalize the content using the 6-step algorithm (entities → NFKC → case fold → remove control chars → collapse ASCII whitespace → trim)
+3. Compute hash = SHA-256 over the normalized UTF-8 bytes of this content string
+4. Include the same hash in both the HTTP ETag header and in the JSON payload
+
+**No Circularity:**
+
+- The hash is computed from normalized content text, not from the JSON payload
+- The JSON payload includes the pre-computed hash
+- The ETag header uses the same pre-computed hash
+- No circular dependency exists between ETag and the payload
+
+**Template-Invariance:**
+
+- Same content text → same hash
+- JSON structure (key order, whitespace, metadata fields) can vary without affecting the hash
+- The hash captures semantic identity of the content, not JSON bytes or HTML templates
+
+**Deterministic JSON (Recommended):**
+
+Servers SHOULD use deterministic JSON serialization (stable key order for objects, preserve array order, consistent UTF-8 encoding and escaping, no pretty-print). This improves cache reliability and testing. However, the TCT hash does not depend on JSON byte stability because it is derived from content.
+
+
+
 ## ETag Generation
 
 The M-URL response MUST include an `ETag` header containing the template-invariant fingerprint.
 
-**Weak ETag (REQUIRED for TCT):**
+**Strong ETag (REQUIRED for TCT):**
 
 ~~~http
-ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 ~~~
 
 **Rationale:**
-- Template-invariant fingerprints represent semantic equivalence, not byte-for-byte identity
-- Weak ETags (`W/"..."`) express this semantic validator property per RFC 9110 Section 8.8.1
-- TCT parity validation MUST use weak ETags for the semantic fingerprint
-- Strong ETags MAY be used for representation-specific caching outside TCT parity (e.g., CDN byte-level caching)
+
+TCT uses strong ETags for cache compatibility and practical interoperability:
+
+- Strong ETags ensure reliable If-None-Match validation across HTTP cache systems (reverse proxies, CDNs, LiteSpeed Cache, Varnish)
+- Template-invariant hashing produces stable content fingerprints that survive theme and template changes
+- Strong validator format is universally supported across all HTTP/1.1 implementations
+- See "Hash Computation (Content-Based, Not Envelope-Based)" for detailed computation semantics
 
 **Format Requirements:**
-- MUST start with `sha256-` prefix (after optional `W/"` weak prefix)
+- MUST start with `sha256-` prefix
 - MUST contain 64 hexadecimal characters (256 bits)
-- Weak ETags MUST be used for semantic fingerprints
+- MUST NOT include `W/` weak prefix
  - See "Sitemap-First Verification" for the parity rule between endpoint ETag and sitemap `contentHash`
 
 **Note:** If-Range requires a strong validator. If the If-Range validator is weak or does not match, the server MUST ignore the Range header and send `200 OK` with the full representation (per RFC 9110 Section 13.1.5).
+
+
+
+**Parity Rule (Normative):**
+
+Sitemap `contentHash` and the JSON payload `hash` fields MUST exactly equal the M-URL ETag value after removing surrounding quotes (and, if present, any leading `W/` weak prefix).
+
+**Examples:**
+
+- `ETag: "sha256-2c26…e7ae"` → `contentHash: sha256-2c26…e7ae`, `payload.hash: sha256-2c26…e7ae`
+- `ETag: W/"sha256-2c26…e7ae"` → `contentHash: sha256-2c26…e7ae`, `payload.hash: sha256-2c26…e7ae`
+
+**Semantics Note:**
+
+The TCT ETag is a semantic fingerprint of content identity. In deployments that emit strong ETags formatted as `"sha256-…"`, agents MUST verify parity through string equality (`contentHash == clean(ETag) == payload.hash`) and MUST NOT infer byte-identical JSON solely from the ETag value. The strong ETag indicates content identity, not representation byte-identity (see "Hash Computation" for the distinction between content hashing and JSON-byte hashing).
 
 # Conditional Request Discipline
 
@@ -518,7 +568,7 @@ When the ETag matches the `If-None-Match` value:
 
 ~~~http
 HTTP/1.1 304 Not Modified
-ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 Last-Modified: Wed, 21 Oct 2025 07:28:00 GMT
 Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400
 Vary: Accept-Encoding
@@ -566,7 +616,7 @@ HEAD /post/llm/ HTTP/1.1
 Host: example.com
 
 HTTP/1.1 200 OK
-ETag: W/"sha256-abc123..."
+ETag: "sha256-abc123..."
 Last-Modified: Wed, 21 Oct 2025 07:28:00 GMT
 Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60
 Vary: Accept-Encoding
@@ -613,7 +663,7 @@ Publishers MAY also include a `Sitemap:` directive in `robots.txt` pointing to t
 
 **Parity Rule:**
 
-The sitemap `contentHash` value MUST match the M-URL `ETag` header value, excluding quotes and the `W/` weak prefix. This enables zero-fetch skip optimization: clients compare sitemap hash to cached ETag without fetching the M-URL.
+The sitemap `contentHash` value MUST match the M-URL `ETag` header value, excluding quotes. This enables zero-fetch skip optimization: clients compare sitemap hash to cached ETag without fetching the M-URL.
 
 **Forward Compatibility:**
 
@@ -668,7 +718,7 @@ Host: example.com
 
 HTTP/1.1 200 OK
 Content-Type: application/json
-ETag: W/"sha256-sitemap-fingerprint"
+ETag: "sha256-sitemap-fingerprint"
 Last-Modified: Wed, 21 Oct 2025 12:00:00 GMT
 Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60
 Vary: Accept-Encoding
@@ -686,10 +736,10 @@ Content-Length: 4567
 ~~~http
 GET /llm-sitemap.json HTTP/1.1
 Host: example.com
-If-None-Match: W/"sha256-sitemap-fingerprint"
+If-None-Match: "sha256-sitemap-fingerprint"
 
 HTTP/1.1 304 Not Modified
-ETag: W/"sha256-sitemap-fingerprint"
+ETag: "sha256-sitemap-fingerprint"
 Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60
 ~~~
 
@@ -862,7 +912,7 @@ Content-Type: application/json; charset=utf-8
 - `canonical_url` (string, required): The C-URL for this resource
 - `title` (string, required): Resource title
 - `content` (string, required): Plain‑text core content (UTF‑8). This field is the input to the normalization algorithm. The content field MUST NOT contain HTML tags or markup. Publishers MUST strip or escape any embedded HTML before inclusion. To ensure fingerprint stability, publishers SHOULD avoid including volatile, non‑semantic elements (e.g., dynamic view counts, timestamps) in this string. Publishers SHOULD provide content independent of template/theme presentation. Publishers MAY include semantic metadata (such as title or media captions) to create a more complete fingerprint.
-- `hash` (string, required): Template-invariant fingerprint. MUST equal the M-URL ETag value excluding the `W/` prefix and quotes. This is the same value as the sitemap `contentHash` field. Format: `sha256-<64 hex>`. Example: if M-URL ETag is `W/"sha256-abc123"`, then `hash` is `sha256-abc123` and sitemap `contentHash` is `sha256-abc123`.
+- `hash` (string, required): Template-invariant fingerprint. MUST equal the M-URL ETag value excluding quotes. This is the same value as the sitemap `contentHash` field. Format: `sha256-<64 hex>`. Example: if M-URL ETag is `"sha256-abc123"`, then `hash` is `sha256-abc123` and sitemap `contentHash` is `sha256-abc123`.
 
 **Forward Compatibility:**
 
@@ -893,7 +943,7 @@ Clients MUST ignore unknown fields in the JSON payload. Servers MAY add addition
 ~~~http
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=utf-8
-ETag: W/"sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
 Link: <https://example.com/post/>; rel="canonical"
 Last-Modified: Wed, 15 Oct 2025 14:30:00 GMT
 Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400
@@ -996,7 +1046,7 @@ Shared caches that ignore validators can serve stale or mixed content. Publisher
 
 ## Fingerprint Collision and Normalization Variance
 
-SHA-256 fingerprints provide practical collision resistance. The greater risk is normalization variance. Implementations MUST apply the baseline normalization consistently; agents MUST NOT infer byte identity from weak ETags.
+SHA-256 fingerprints provide practical collision resistance. The greater risk is normalization variance. Implementations MUST apply the baseline normalization consistently; agents MUST NOT infer byte identity from strong ETags.
 
 ## Content Provenance and Origin Authentication (Optional)
 
@@ -1350,7 +1400,7 @@ Test Vector 1: Basic ASCII with Whitespace
 - Normalized String: `hello world testing`
 - SHA‑256 (hex): `479045cd11cebe841bab15d5ffba3dbac4fed0ca5c4eb74d1102e562a45f4f1f`
 - `contentHash`: `sha256-479045cd11cebe841bab15d5ffba3dbac4fed0ca5c4eb74d1102e562a45f4f1f`
-- `ETag`: `W/"sha256-479045cd11cebe841bab15d5ffba3dbac4fed0ca5c4eb74d1102e562a45f4f1f"`
+- `ETag`: `"sha256-479045cd11cebe841bab15d5ffba3dbac4fed0ca5c4eb74d1102e562a45f4f1f"`
 
 ---
 
@@ -1359,7 +1409,7 @@ Test Vector 2: Entity and Unicode
 - Normalized String: `test & unicode: café—`
 - SHA‑256 (hex): `f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24`
 - `contentHash`: `sha256-f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24`
-- `ETag`: `W/"sha256-f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24"`
+- `ETag`: `"sha256-f58639b586fac9cb70d4513c83a6b2954178a80f12f5c1069aad09d124ef7b24"`
 ---
 
 Test Vector 3: Form Feed Handling
@@ -1370,7 +1420,7 @@ Test Vector 3: Form Feed Handling
 - Normalized String: `helloworldtest`
 - SHA-256 (hex): `a869aef68aa3474f125dd9d5b731f6cc1495a6fbafa5de63f55bc79faf75d9f8`
 - `contentHash`: `sha256-a869aef68aa3474f125dd9d5b731f6cc1495a6fbafa5de63f55bc79faf75d9f8`
-- `ETag`: `W/"sha256-a869aef68aa3474f125dd9d5b731f6cc1495a6fbafa5de63f55bc79faf75d9f8"`
+- `ETag`: `"sha256-a869aef68aa3474f125dd9d5b731f6cc1495a6fbafa5de63f55bc79faf75d9f8"`
 - Note: Form Feed (U+000C) is a control character removed in Step 4, not preserved for whitespace collapsing
 
 ---
