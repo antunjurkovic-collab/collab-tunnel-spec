@@ -1511,6 +1511,72 @@ Test Vector 3: Form Feed Handling
 
 ---
 
+
+
+# Method A Canonical Test Vector (Normative)
+
+This test vector ensures interoperability across Method A implementations.
+
+**Input:**
+
+- Title: `Hello World`
+- Content: `Hello World`
+- Canonical URL: `https://example.com/hello-world/`
+- Profile: `tct-1`
+
+**Step 1: Build JSON payload WITHOUT hash field**
+
+~~~json
+{
+  "canonical_url": "https://example.com/hello-world/",
+  "content": "Hello World",
+  "profile": "tct-1",
+  "title": "Hello World"
+}
+~~~
+
+**Step 2: Canonicalize (lexicographic key order, compact, UTF-8)**
+
+Canonical JSON string (116 bytes):
+
+~~~
+{"canonical_url":"https://example.com/hello-world/","content":"Hello World","profile":"tct-1","title":"Hello World"}
+~~~
+
+**Step 3: Compute SHA-256 over UTF-8 bytes**
+
+SHA-256 (hex): `af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8`
+
+Hash value: `sha256-af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8`
+
+**Step 4: Set ETag and add hash to payload**
+
+ETag header: `"sha256-af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8"`
+
+Sitemap contentHash: `sha256-af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8`
+
+Final JSON payload:
+
+~~~json
+{
+  "canonical_url": "https://example.com/hello-world/",
+  "content": "Hello World",
+  "hash": "sha256-af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8",
+  "profile": "tct-1",
+  "title": "Hello World"
+}
+~~~
+
+**Verification:**
+
+All compliant Method A implementations MUST produce:
+- Canonical JSON: 116 UTF-8 bytes
+- SHA-256 hex: `af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8`
+- Hash value: `sha256-af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8`
+- ETag: `"sha256-af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8"`
+
+Parity: `contentHash == clean(ETag) == payload.hash == "sha256-af976cac6d5c89428a724e456311081ddbf3bab73cc4de7c85119b185ffbdab8"`
+
 # Energy Methodology (Informative)
 
 **Scope**: This appendix provides illustrative, non-normative estimates to contextualize the potential energy impact of TCT deployment. Actual results will vary significantly based on infrastructure, model architecture, and deployment patterns.
