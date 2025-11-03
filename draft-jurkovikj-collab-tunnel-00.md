@@ -60,7 +60,7 @@ normative:
     target: https://www.rfc-editor.org/rfc/rfc8174
 
   RFC3339:
-    title: Date and Time on the Internet: Timestamps
+    title: "Date and Time on the Internet: Timestamps"
     author:
       - name: G. Klyne
       - name: C. Newman
