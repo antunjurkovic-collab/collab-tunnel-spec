@@ -2,7 +2,7 @@
 title: "The Collaboration Tunnel Protocol"
 abbrev: "Collab-Tunnel"
 docname: draft-jurkovikj-collab-tunnel-00
-category: info
+category: std
 ipr: trust200902
 submissiontype: IETF
 
@@ -1322,7 +1322,7 @@ function handle_llm_endpoint() {
   $normalized = normalize_text($content);
   $hash_hex = hash('sha256', $normalized);
   $hash = "sha256-{$hash_hex}";
-  $etag = "W/\"{$hash}\"";
+  $etag = "\"{$hash}\"";  // Strong ETag (no W/ prefix)
 
   $canonical_url = get_permalink($post_id);
 
