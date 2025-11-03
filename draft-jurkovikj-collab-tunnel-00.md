@@ -230,8 +230,8 @@ Implementations MUST:
    - M-URL responses MUST use strong ETags for template-invariant fingerprints: `"sha256-<64-hex>"`
    - Server MUST honor `If-None-Match` header
    - Server MUST return `304 Not Modified` when ETag matches
-   - Server MUST give `If-None-Match` precedence over `If-Modified-Since` ({{RFC9110}} (Section 13.1.2))
-   - If-Range requires a strong validator. If the If-Range validator is weak or does not match, the server MUST ignore the Range header and send `200 OK` with the full representation (per {{RFC9110}} (Section 13.1.5))
+   - Server MUST give `If-None-Match` precedence over `If-Modified-Since` ({{RFC9110, Section 13.1.2}})
+   - If-Range requires a strong validator. If the If-Range validator is weak or does not match, the server MUST ignore the Range header and send `200 OK` with the full representation (per {{RFC9110, Section 13.1.5}})
 
 4. **304 Response**
    - Response MUST NOT include message body
@@ -635,7 +635,7 @@ Template-invariance addresses HTML/theme independence. Strong ETag semantics add
 
 ## If-None-Match Precedence
 
-When both `If-None-Match` and `If-Modified-Since` headers are present, servers MUST give `If-None-Match` precedence per {{RFC9110}} (Section 13.1.2). This means:
+When both `If-None-Match` and `If-Modified-Since` headers are present, servers MUST give `If-None-Match` precedence per {{RFC9110, Section 13.1.2}}. This means:
 
 1. Evaluate `If-None-Match` first
 2. If ETag matches, return `304 Not Modified` (ignore `If-Modified-Since`)
