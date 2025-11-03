@@ -67,6 +67,13 @@ normative:
     date: 2002-07
     target: https://www.rfc-editor.org/rfc/rfc3339
 
+  RFC8259:
+    title: The JavaScript Object Notation (JSON) Data Interchange Format
+    author:
+      - name: T. Bray
+    date: 2017-12
+    target: https://www.rfc-editor.org/rfc/rfc8259
+
 informative:
   RFC9530:
     title: Digest Fields
@@ -1382,7 +1389,7 @@ Thanks to the WordPress, Cloudflare, and IETF HTTP Working Group communities for
 
 This section is informative.
 
-**PHP implementation** (simplified):
+**PHP implementation** (simplified, using Method A - Canonical JSON Strong-Byte):
 
 ~~~php
 function handle_llm_endpoint() {
@@ -1428,7 +1435,7 @@ function handle_llm_endpoint() {
     'hash' => $hash
   ]);
 }
-// Minimal normalization helper used above
+// Minimal normalization helper (for Method B implementations)
 function normalize_text($text) {
   $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
   if (class_exists('Normalizer')) {

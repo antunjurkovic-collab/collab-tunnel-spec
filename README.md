@@ -61,9 +61,12 @@ The Collaboration Tunnel Protocol consists of four coordinated mechanisms:
   5. Collapse ASCII whitespace (SPACE, TAB, LF, CR) to single space
   6. Trim leading/trailing whitespace
 - Then compute SHA-256 hash over normalized UTF-8 bytes
-- Weak ETag format: `W/"sha256-..."`
+- Strong ETag format: `"sha256-..."` (computed over canonical JSON bytes)
+- Method A (recommended): Hash canonical JSON excluding hash field
+- Method B (allowed): Hash normalized content text (content-locked)
 - Stable across theme/template changes
-- **Parity-only clients:** Verify equality of sitemap contentHash, clean(ETag), and payload.hash; do not recompute from HTML
+- **Parity verification:** Clients MUST verify `contentHash == clean(ETag) == payload.hash` via string equality
+- **Deterministic JSON:** Implementations MUST use stable key order, UTF-8, compact serialization per RFC 8785 or equivalent
 
 ### 3. Conditional Request Discipline
 - If-None-Match takes precedence
@@ -94,7 +97,7 @@ The Collaboration Tunnel Protocol consists of four coordinated mechanisms:
 HTTP/1.1 200 OK
 Content-Type: application/json; charset=UTF-8
 Link: <https://example.com/post/>; rel="canonical"
-ETag: W/"sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ETag: "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-error=86400
 Vary: Accept-Encoding
 ```
