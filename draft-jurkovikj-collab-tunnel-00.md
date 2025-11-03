@@ -534,12 +534,11 @@ TCT uses strong ETags for cache compatibility and practical interoperability:
 
 **Parity Rule (Normative):**
 
-Sitemap `contentHash` and the JSON payload `hash` fields MUST exactly equal the M-URL ETag value after removing surrounding quotes (and, if present, any leading `W/` weak prefix).
+Sitemap `contentHash` and the JSON payload `hash` fields MUST exactly equal the M-URL ETag value after removing surrounding quotes.
 
-**Examples:**
+**Example:**
 
 - `ETag: "sha256-2c26…e7ae"` → `contentHash: sha256-2c26…e7ae`, `payload.hash: sha256-2c26…e7ae`
-- `ETag: W/"sha256-2c26…e7ae"` → `contentHash: sha256-2c26…e7ae`, `payload.hash: sha256-2c26…e7ae`
 
 **Semantics Note:**
 
