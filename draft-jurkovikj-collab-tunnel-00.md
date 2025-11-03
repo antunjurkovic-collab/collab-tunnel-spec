@@ -74,6 +74,20 @@ normative:
     date: 2017-12
     target: https://www.rfc-editor.org/rfc/rfc8259
 
+  UAX15:
+    title: "Unicode Standard Annex #15: Unicode Normalization Forms"
+    author:
+      - org: Unicode Consortium
+    date: 2024
+    target: https://www.unicode.org/reports/tr15/
+
+  Unicode-CaseFolding:
+    title: "Unicode Case Folding"
+    author:
+      - org: Unicode Consortium
+    date: 2024
+    target: https://www.unicode.org/versions/Unicode15.1.0/ch03.pdf
+
 informative:
   RFC9530:
     title: Digest Fields
@@ -91,6 +105,14 @@ informative:
       - name: M. Sporny
     date: 2024-02
     target: https://www.rfc-editor.org/rfc/rfc9421
+
+  RFC9448:
+    title: "RateLimit Fields for HTTP"
+    author:
+      - name: R. Polli
+      - name: A. Martinez
+    date: 2023-10
+    target: https://www.rfc-editor.org/rfc/rfc9448
 
   RFC6973:
     title: Privacy Considerations for Internet Protocols
@@ -123,6 +145,12 @@ informative:
   AMP:
     title: Accelerated Mobile Pages (AMP) HTML Specification
     target: https://amp.dev/documentation/guides-and-tutorials/learn/spec/amphtml/
+
+  WHATWG-HTML:
+    title: "HTML Living Standard - Named character references"
+    author:
+      - org: WHATWG
+    target: https://html.spec.whatwg.org/multipage/named-characters.html
 
   XMLSitemaps:
     title: Sitemap XML format
@@ -235,15 +263,15 @@ Implementations MUST:
 
 4. **304 Response**
    - Response MUST NOT include message body
-   - Response MUST include `ETag` header
-   - Response SHOULD include `Cache-Control` header
+   - Servers MUST include ETag if the corresponding 200 would; otherwise SHOULD include ETag
+   - Servers SHOULD include Cache-Control (consistent with {{RFC9110, Section 15.4.5}})
 
 5. **HEAD Support**
    - Servers SHOULD support HEAD requests for all M-URLs and sitemaps
    - HEAD responses MUST return the same validators and cache headers as GET and MUST NOT include a message body
    - Body-dependent headers (e.g., Content-Length) MAY reflect the size of the corresponding GET response
    - This behavior applies across HTTP/1.1, HTTP/2, and HTTP/3
-   - Implementations MUST avoid hop-by-hop headers on M-URLs and sitemaps and MUST NOT use transfer-codings or trailers on these responses
+   - Implementations MUST avoid hop-by-hop headers on M-URLs and sitemaps and SHOULD NOT use transfer-codings or trailers on these responses
 
 6. **Sitemap Parity**
    - Sitemap `contentHash` value MUST equal M-URL `ETag` value (excluding quotes)
@@ -265,9 +293,9 @@ Implementations MUST:
    - Agents SHOULD NOT implement the normalization algorithm for compliance purposes; parity verification is sufficient
 
 10. **Content Pages Only**
-   - M-URL endpoints MUST NOT be provided for archive, category, tag, search, or date-based listing pages
-   - Servers MUST return HTTP 404 Not Found for such requests
-   - Sitemaps MUST include only content pages (posts, articles, pages)
+   - Publishers SHOULD NOT provide M-URLs for archive, category, tag, search, or date-based listing pages; where requested, servers SHOULD return 404
+   - Deployments with strong rationale MAY include such endpoints but MUST maintain parity semantics
+   - Sitemaps SHOULD include only content pages (posts, articles, pages)
    - A homepage MAY be included only if it represents stable content
 
 
@@ -370,7 +398,7 @@ Note: The well-known URI is not registered in IANA for -00; future versions may 
 
 ## Content Pages Only
 
-M-URL endpoints SHOULD be provided only for **content pages** (posts, articles, pages) and NOT for archive pages (category listings, tag archives, search results, date archives).
+Publishers SHOULD NOT provide M-URLs for archive, category, tag, search, or date-based listing pages; where requested, servers SHOULD return 404. Deployments with strong rationale MAY include such endpoints but MUST maintain parity semantics.
 
 **Rationale:**
 
@@ -485,6 +513,8 @@ function generateFingerprint(contentString):
 
 Note: This normalization operates on the plain-text `content` field in the JSON payload, not on HTML from the C-URL.
 
+Normalization uses Unicode NFKC [UAX15] and Unicode case folding [Unicode-CaseFolding]; named character references are decoded per the HTML Living Standard [WHATWG-HTML].
+
 
 
 
@@ -505,6 +535,7 @@ Implementations MUST use deterministic JSON serialization when generating M-URL 
   - Do not escape solidus (U+002F)
   - Emit Unicode as UTF-8; use `\uXXXX` only where required by {{RFC8259}}
 - **Numbers:** MUST be in minimal canonical form (no leading zeros, no "+", lowercase "e")
+- **Non-finite numbers:** JSON numbers MUST NOT represent NaN or infinite values. Producers MUST NOT emit non-finite values; consumers encountering them MUST treat the payload as invalid. Values that cannot be portably represented SHOULD be encoded as strings with schema guidance
 
 **Deterministic field inclusion:**
 
@@ -517,7 +548,7 @@ Implementations SHOULD use {{RFC8785}} (JSON Canonicalization Scheme) or documen
 
 ## Strong ETag and Parity (Normative)
 
-Servers emitting strong validators MUST ensure the strong ETag identifies the exact JSON bytes of the representation.
+Servers emitting strong validators MUST ensure that the ETag value changes whenever the final serialized JSON payload bytes change; equality of strong ETag values MUST imply byte-identical representations.
 
 ### Method A: Canonical JSON Strong-Byte (Recommended)
 
@@ -536,6 +567,8 @@ Servers emitting strong validators MUST ensure the strong ETag identifies the ex
 **Rationale:**
 
 This method guarantees strong ETag semantics even as the protocol evolves to add new fields. Any change to the JSON representation correctly changes the ETag, ensuring byte-identical validation per {{RFC9110}}.
+
+Computing the ETag over the canonical form of the payload without the `hash` field still satisfies strong validator semantics because the final payload bytes are a deterministic function of that canonical pre-hash payload and the ETag value.
 
 **Example:**
 
@@ -660,6 +693,10 @@ Cache-Control: max-age=0, must-revalidate, stale-while-revalidate=60, stale-if-e
 Vary: Accept-Encoding
 ~~~
 
+## Replay and Stale Intermediaries
+
+If an agent receives a 200 whose ETag is older than its cached parity while the sitemap contentHash matches the cached parity, it SHOULD treat the cached/sitemap state as authoritative unless the server signals otherwise (e.g., newer Last-Modified or sitemap value). The agent SHOULD revalidate end-to-end (e.g., Cache-Control: no-cache + If-None-Match) before adopting a regression.
+
 ## Cache-Control Directives
 
 M-URL responses SHOULD use:
@@ -685,6 +722,8 @@ Vary: Accept-Encoding
 ~~~
 
 M-URL responses primarily vary by compression (gzip, brotli), not by content type (always `application/json`).
+
+Servers SHOULD NOT vary on User-Agent for M-URLs and sitemaps to preserve cacheability and reduce fragmentation.
 
 ## HEAD Request Support
 
@@ -762,6 +801,7 @@ Publishers and agents SHOULD consider scalability for large sites:
 - Publishers MAY split sitemaps into an index (a sitemap-of-sitemaps) to segment large URL sets (analogous to XML Sitemaps sitemapindex)
 - Servers SHOULD support compression (e.g., `Content-Encoding: gzip` or `br`) for sitemap responses; agents SHOULD accept compressed responses
 - Agents SHOULD use streaming JSON parsers for large sitemaps and enforce a maximum sitemap size (e.g., 100 MB)
+- Servers SHOULD keep per-item objects compact (RECOMMENDED ≤ 2 KB). Servers MUST bound total sitemap size by an operator-configured budget. When budgets would be exceeded (RECOMMENDED ≤ 50,000 items per sitemap), servers SHOULD publish a sitemap index and split content
 
 **Sitemap Index (Large Sites):**
 
@@ -964,6 +1004,8 @@ Automated agents SHOULD:
 3. Respect rate hints to avoid overwhelming origin
 4. Review terms before commercial use
 
+This specification uses registered relations (alternate/index/describedby). A dedicated relation for TCT sitemaps might be registered in the future; this document does not create new link relations.
+
 ## Alignment with IETF AIPREF
 
 This policy format is designed to complement the IETF AIPREF (AI Preferences) proposal, providing machine-readable expressions of publisher preferences for automated agent behavior.
@@ -1070,6 +1112,14 @@ This section provides non-normative operational guidance for deployers and autom
 - If using an edge worker/proxy, ensure required headers (`Link`, `ETag`, `Cache-Control`, `Vary`) are preserved or injected consistently
 
 # Security Considerations
+
+## HTTPS and TLS
+
+M-URLs and sitemaps MUST be served over HTTPS. Agents MUST validate TLS certificates using platform trust stores and MUST reject invalid certificates.
+
+## Rate Limiting
+
+Servers MAY expose RateLimit fields (RFC 9448); agents SHOULD respect them.
 
 ## Content Integrity
 
