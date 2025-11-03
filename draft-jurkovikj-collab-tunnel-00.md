@@ -135,6 +135,13 @@ informative:
     date: 2020-06
     target: https://www.rfc-editor.org/rfc/rfc8785
 
+  RFC8615:
+    title: Well-Known Uniform Resource Identifiers (URIs)
+    author:
+      - name: M. Nottingham
+    date: 2019-05
+    target: https://www.rfc-editor.org/rfc/rfc8615
+
   ResourceSync:
     title: ResourceSync Framework Specification
     author:
@@ -255,7 +262,7 @@ Implementations MUST:
    - Sitemap MUST include `contentHash` field for each URL
 
 3. **Conditional Requests**
-   - M-URL responses MUST use strong ETags for template-invariant fingerprints: `"sha256-<64-hex>"`
+   - M-URL responses MUST use strong ETags for template-invariant fingerprints: `"sha256-<64 lowercase ASCII hex chars>"`
    - Server MUST honor `If-None-Match` header
    - Server MUST return `304 Not Modified` when ETag matches
    - Server MUST give `If-None-Match` precedence over `If-Modified-Since` ({{RFC9110, Section 13.1.2}})
@@ -494,7 +501,7 @@ To generate the template-invariant fingerprint, the server MUST operate on the J
 6. Trim Whitespace: Remove any leading or trailing ASCII SPACE characters
 7. Compute Hash: Compute the SHA-256 hash over the resulting string (encoded as UTF-8)
 
-The strong ETag MUST be `"sha256-<64-hex-chars>"` from this hash. The sitemap `contentHash` MUST be `sha256-<64-hex-chars>` from the same hash (without the `W/` prefix and quotes).
+The strong ETag MUST be `"sha256-<64 lowercase ASCII hex chars>"` from this hash. The sitemap `contentHash` MUST be `sha256-<64 lowercase ASCII hex chars>` from the same hash (without the `W/` prefix and quotes).
 
 Example (pseudocode):
 
@@ -879,6 +886,10 @@ Clients SHOULD use conditional requests for sitemap to avoid unnecessary bandwid
 
 **M-URL unavailable:** Agents MAY defer the fetch or fall back to the C-URL HTML as a last resort; publishers SHOULD return a 4xx/5xx rather than an empty 200.
 
+**HTTP Status Code Handling:**
+
+Agents SHOULD respect common HTTP status codes for retries and backoff. If a server responds with 410 Gone, the agent SHOULD treat the resource as permanently deleted. If a server responds with 429 Too Many Requests or 503 Service Unavailable, the agent SHOULD honor the Retry-After header if present.
+
 ## Zero-Fetch Skip Logic
 
 Automated agents SHOULD:
@@ -1230,6 +1241,10 @@ Publishers MAY restrict M-URL access using standard HTTP mechanisms:
 - Geographic restrictions
 
 Access controls SHOULD be consistent between C-URL and M-URL for the same resource.
+
+**Authenticated Content Caching:**
+
+Agents that access authenticated M-URLs MUST NOT store the resulting responses in caches that could be accessed by other unauthenticated parties. Authenticated content MUST be stored in a private, credential-scoped cache.
 
 
 **Authenticated Sitemaps (Informative):**
