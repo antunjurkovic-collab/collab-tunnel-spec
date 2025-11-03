@@ -97,6 +97,14 @@ informative:
       - name: R. Smith
     date: 2013-07
     target: https://www.rfc-editor.org/rfc/rfc6973
+  RFC8785:
+    title: JSON Canonicalization Scheme (JCS)
+    author:
+      - name: A. Rundgren
+      - name: B. Jordan
+      - name: S. Erdtman
+    date: 2020-06
+    target: https://www.rfc-editor.org/rfc/rfc8785
 
   ResourceSync:
     title: ResourceSync Framework Specification
@@ -473,76 +481,148 @@ Note: This normalization operates on the plain-text `content` field in the JSON 
 
 
 
-## Hash Computation (Content-Based, Not Envelope-Based)
-
-The TCT hash represents content identity, not representation identity.
-
-**Computation Flow:**
-
-1. Extract content (title + body text) from the CMS resource (theme-independent)
-2. Normalize the content using the 6-step algorithm (entities → NFKC → case fold → remove control chars → collapse ASCII whitespace → trim)
-3. Compute hash = SHA-256 over the normalized UTF-8 bytes of this content string
-4. Include the same hash in both the HTTP ETag header and in the JSON payload
-
-**No Circularity:**
-
-- The hash is computed from normalized content text, not from the JSON payload
-- The JSON payload includes the pre-computed hash
-- The ETag header uses the same pre-computed hash
-- No circular dependency exists between ETag and the payload
-
-**Template-Invariance:**
-
-- Same content text → same hash
-- JSON structure (key order, whitespace, metadata fields) can vary without affecting the hash
-- The hash captures semantic identity of the content, not JSON bytes or HTML templates
-
-**Deterministic JSON (Recommended):**
-
-Servers SHOULD use deterministic JSON serialization (stable key order for objects, preserve array order, consistent UTF-8 encoding and escaping, no pretty-print). This improves cache reliability and testing. However, the TCT hash does not depend on JSON byte stability because it is derived from content.
 
 
+## Deterministic JSON Serialization (Normative)
 
-## ETag Generation
+Implementations MUST use deterministic JSON serialization when generating M-URL responses to ensure that identical inputs yield byte-identical JSON.
 
-The M-URL response MUST include an `ETag` header containing the template-invariant fingerprint.
+**Required Properties:**
 
-**Strong ETag (REQUIRED for TCT):**
+- **Stable object key order:** Lexicographic ordering by Unicode codepoint at every depth
+- **Preserve array order:** Arrays MUST maintain element order as defined
+- **UTF-8 encoding:** Without BOM; emit exactly one JSON document; no trailing newline
+- **Compact serialization:** No pretty-print; no extraneous whitespace
+- **Consistent escaping per {{RFC8259}}:**
+  - Escape quotation mark (U+0022) and backslash (U+005C)
+  - Do not escape solidus (U+002F)
+  - Emit Unicode as UTF-8; use `\uXXXX` only where required by {{RFC8259}}
+- **Numbers:** MUST be in minimal canonical form (no leading zeros, no "+", lowercase "e")
 
-~~~http
-ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
-~~~
+**Deterministic field inclusion:**
+
+The set of fields included and their values for a given resource MUST be deterministic. Fields that vary independently of the normalized content MUST NOT be included unless they are a deterministic function of that content.
+
+**Recommendation:**
+
+Implementations SHOULD use {{RFC8785}} (JSON Canonicalization Scheme) or document an equivalent deterministic serialization profile to ensure cross-platform consistency.
+
+
+## Strong ETag and Parity (Normative)
+
+Servers emitting strong validators MUST ensure the strong ETag identifies the exact JSON bytes of the representation.
+
+### Method A: Canonical JSON Strong-Byte (Recommended)
+
+**Computation:**
+
+1. Build the JSON response object WITHOUT the `hash` field
+2. Canonicalize the JSON per the deterministic serialization requirements above
+3. Compute `F = SHA-256(canonical_json_bytes)` as 64 hexadecimal characters
+4. Set the hash value: `hash_value = "sha256-" + F`
+5. Add the `hash` field to the JSON payload: `payload.hash = hash_value`
+6. Set HTTP headers:
+   - `ETag: "sha256-" + F`
+   - Sitemap: `contentHash: "sha256-" + F`
+7. Serialize and send the final payload (now including `hash`) using the same canonicalization
 
 **Rationale:**
 
-TCT uses strong ETags for cache compatibility and practical interoperability:
-
-- Strong ETags ensure reliable If-None-Match validation across HTTP cache systems (reverse proxies, CDNs, LiteSpeed Cache, Varnish)
-- Template-invariant hashing produces stable content fingerprints that survive theme and template changes
-- Strong validator format is universally supported across all HTTP/1.1 implementations
-- See "Hash Computation (Content-Based, Not Envelope-Based)" for detailed computation semantics
-
-**Format Requirements:**
-- MUST start with `sha256-` prefix
-- MUST contain 64 hexadecimal characters (256 bits)
-- MUST NOT include `W/` weak prefix
- - See "Sitemap-First Verification" for the parity rule between endpoint ETag and sitemap `contentHash`
-
-**Note:** If-Range requires a strong validator. If the If-Range validator is weak or does not match, the server MUST ignore the Range header and send `200 OK` with the full representation (per RFC 9110 Section 13.1.5).
-
-
-
-**Parity Rule (Normative):**
-
-Sitemap `contentHash` and the JSON payload `hash` fields MUST exactly equal the M-URL ETag value after removing surrounding quotes.
+This method guarantees strong ETag semantics even as the protocol evolves to add new fields. Any change to the JSON representation correctly changes the ETag, ensuring byte-identical validation per {{RFC9110}}.
 
 **Example:**
 
-- `ETag: "sha256-2c26…e7ae"` → `contentHash: sha256-2c26…e7ae`, `payload.hash: sha256-2c26…e7ae`
+~~~pseudocode
+json_without_hash = {
+  "profile": "tct-1",
+  "canonical_url": "https://example.com/post/",
+  "title": "Article Title",
+  "content": "Normalized content text..."
+}
 
-**Semantics Note:**
+canonical_bytes = canonicalize_json(json_without_hash)
+F = sha256(canonical_bytes).hexdigest()  // 64 hex chars
+hash_value = "sha256-" + F
 
-The TCT ETag is a semantic fingerprint of content identity. In deployments that emit strong ETags formatted as `"sha256-…"`, agents MUST verify parity through string equality (`contentHash == clean(ETag) == payload.hash`) and MUST NOT infer byte-identical JSON solely from the ETag value. The strong ETag indicates content identity, not representation byte-identity (see "Hash Computation" for the distinction between content hashing and JSON-byte hashing).
+json_with_hash = json_without_hash
+json_with_hash["hash"] = hash_value
+
+response.setHeader("ETag", '"' + hash_value + '"')
+response.send(json_with_hash)
+~~~
+
+### Method B: Content-Locked Strong-Content (Allowed with Restrictions)
+
+**Computation:**
+
+1. Extract and normalize content per the 6-step normalization algorithm
+2. Compute `F = SHA-256(normalized_content_utf8_bytes)` as 64 hexadecimal characters
+3. Set the hash value: `hash_value = "sha256-" + F`
+4. Build the JSON payload deterministically from the normalized content
+5. Set HTTP headers:
+   - `ETag: "sha256-" + F`
+   - Sitemap: `contentHash: "sha256-" + F`
+   - JSON payload: `hash: "sha256-" + F`
+
+**Restrictions:**
+
+This method is ONLY valid if:
+
+- The ENTIRE JSON representation is a deterministic function of the normalized content and fixed protocol constants
+- NO field may vary independently of the normalized content
+- Adding or changing any field REQUIRES recomputing the hash from updated content
+
+**Rationale:**
+
+If the final JSON bytes are strictly determined by content, then content-hashing produces the same result as JSON-hashing. This preserves template-invariance: same content text produces the same hash regardless of HTML/theme presentation.
+
+**Caution:**
+
+Future protocol versions that add metadata fields (e.g., `language`, `author`, `published_date`) independent of content text would violate strong semantics with this method. Such deployments MUST migrate to Method A.
+
+
+## Parity Rule (Normative)
+
+Sitemap `contentHash`, JSON payload `hash` field, and M-URL ETag value MUST satisfy:
+
+~~~
+contentHash == clean(ETag) == payload.hash
+~~~
+
+Where `clean(ETag)` removes surrounding quotes from the ETag header value.
+
+**Example:**
+
+- HTTP Header: `ETag: "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"`
+- Sitemap: `contentHash: sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae`
+- JSON Payload: `"hash": "sha256-2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"`
+
+**Verification:**
+
+Clients MUST verify parity through string equality and MUST NOT recompute hashes from HTML. Clients that detect parity violations SHOULD log a warning and MAY reject the response.
+
+
+## Template-Invariance
+
+TCT's template-invariance property means that HTML presentation changes (theme updates, CSS/JavaScript modifications, navigation restructuring) do not affect the protocol's hash values, provided the core content (title + body text) remains unchanged.
+
+**With Method A (Canonical JSON Strong-Byte):**
+
+- HTML changes → No effect on normalized content → No effect on JSON → ETag unchanged ✓
+- JSON field addition/change → JSON bytes change → ETag changes ✓
+- Result: Template-invariance preserved AND strong ETag semantics correct
+
+**With Method B (Content-Locked Strong-Content):**
+
+- HTML changes → No effect on normalized content → ETag unchanged ✓
+- Content changes → Hash changes → ETag changes ✓
+- Independent JSON field changes → ❌ Would violate strong semantics (not allowed)
+
+**Summary:**
+
+Template-invariance addresses HTML/theme independence. Strong ETag semantics address JSON byte-identity. Both properties are compatible when JSON is deterministic.
+
+
 
 # Conditional Request Discipline
 
