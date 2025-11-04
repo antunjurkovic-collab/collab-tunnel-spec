@@ -37,14 +37,6 @@ normative:
     date: 2017-10
     target: https://www.rfc-editor.org/rfc/rfc8288
 
-  RFC6596:
-    title: The Canonical Link Relation
-    author:
-      - name: M. Ohye
-      - name: J. Kupke
-    date: 2012-04
-    target: https://www.rfc-editor.org/rfc/rfc6596
-
   RFC2119:
     title: Key words for use in RFCs to Indicate Requirement Levels
     author:
@@ -113,6 +105,14 @@ informative:
       - name: A. Martinez
     date: 2023-10
     target: https://www.rfc-editor.org/rfc/rfc9448
+
+  RFC6596:
+    title: The Canonical Link Relation
+    author:
+      - name: M. Ohye
+      - name: J. Kupke
+    date: 2012-04
+    target: https://www.rfc-editor.org/rfc/rfc6596
 
   RFC6973:
     title: Privacy Considerations for Internet Protocols
@@ -796,7 +796,7 @@ Publishers MAY also include a `Sitemap:` directive in `robots.txt` pointing to t
 - `items` (array): List of URL pairs
   - `cUrl` (string, required): Canonical URL
   - `mUrl` (string, required): Machine URL
-  - `modified` (string, RFC 3339): Last modification timestamp
+  - `modified` (string, {{RFC3339}}): Last modification timestamp
   - `contentHash` (string, required): Template-invariant fingerprint (same as M-URL ETag)
 
 **Parity Rule:**
