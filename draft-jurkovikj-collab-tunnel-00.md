@@ -557,6 +557,10 @@ Implementations SHOULD use {{RFC8785}} (JSON Canonicalization Scheme) or documen
 
 Servers emitting strong validators MUST ensure that the ETag value changes whenever the final serialized JSON payload bytes change; equality of strong ETag values MUST imply byte-identical representations.
 
+The 64 hexadecimal digits in the hash value MUST be lowercase ASCII.
+
+ETag values MUST be sent as a quoted-string per {{RFC9110}}.
+
 ### Method A: Canonical JSON Strong-Byte (Recommended)
 
 **Computation:**
@@ -569,13 +573,15 @@ Servers emitting strong validators MUST ensure that the ETag value changes whene
 6. Set HTTP headers:
    - `ETag: "sha256-" + F`
    - Sitemap: `contentHash: "sha256-" + F`
-7. Serialize and send the final payload (now including `hash`) using the same canonicalization
+7. Servers MUST canonicalize the final payload (now including the hash field) before sending, using the same deterministic serialization profile
 
 **Rationale:**
 
 This method guarantees strong ETag semantics even as the protocol evolves to add new fields. Any change to the JSON representation correctly changes the ETag, ensuring byte-identical validation per {{RFC9110}}.
 
 Computing the ETag over the canonical form of the payload without the `hash` field still satisfies strong validator semantics because the final payload bytes are a deterministic function of that canonical pre-hash payload and the ETag value.
+
+Servers SHOULD compute F over identity-coded (uncompressed) canonical bytes and MAY reuse the same ETag across compressed variants; servers MUST set Vary: Accept-Encoding.
 
 **Example:**
 
