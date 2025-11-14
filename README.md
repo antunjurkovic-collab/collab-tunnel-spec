@@ -1,17 +1,26 @@
 # Collaboration Tunnel Protocol Specification
 
-**Status:** Individual Draft (Not yet submitted to IETF)
-**Version:** draft-jurkovikj-collab-tunnel-00
-**Date:** October 2025
+**Status:** Individual Draft (Submitted to IETF)
+**Version:** draft-jurkovikj-collab-tunnel-01
+**Date:** November 14, 2025
 **Author:** Antun Jurkovikj
+**IETF Datatracker:** https://datatracker.ietf.org/doc/draft-jurkovikj-collab-tunnel/
 
 ## Abstract
 
-The Collaboration Tunnel Protocol enables efficient, verifiable content delivery between web publishers and automated agents, achieving up to 90% bandwidth reduction through bidirectional URL discovery, template-invariant content fingerprinting, sitemap-first verification, and strict conditional request discipline.
+This document specifies the Collaboration Tunnel Protocol, an HTTP-based method for efficient, verifiable delivery of web content to automated agents. The protocol uses bidirectional URL discovery, template-invariant content fingerprinting with strong ETags, sitemap-first verification, and strict conditional request discipline to reduce bandwidth while preserving canonical URLs.
 
 ## Specification
 
-📄 **[View Specification](./draft-jurkovikj-collab-tunnel-00.md)**
+**Current Version (01):**
+- 📄 [Markdown](./draft-jurkovikj-collab-tunnel-01.md)
+- 📄 [Text (RFC format)](./drafts/01/draft-jurkovikj-collab-tunnel-01.txt)
+- 📄 [XML (IETF submission)](./drafts/01/draft-jurkovikj-collab-tunnel-01.xml)
+- 📄 [HTML](./drafts/01/draft-jurkovikj-collab-tunnel-01.html)
+- 📄 [PDF](./drafts/01/draft-jurkovikj-collab-tunnel-01.pdf)
+
+**Previous Versions:**
+- [Version 00](./drafts/00/draft-jurkovikj-collab-tunnel-00.md)
 
 ## Implementation Status
 
@@ -161,11 +170,15 @@ print(f"Bandwidth saved: {stats['savings_percentage']}%")
 
 ## Feedback
 
-This is an **individual draft** seeking community feedback before potential IETF submission.
+This is an **individual draft** submitted to the IETF and seeking community feedback.
 
+- **IETF Datatracker:** https://datatracker.ietf.org/doc/draft-jurkovikj-collab-tunnel/
 - **Issues:** https://github.com/antunjurkovic-collab/collab-tunnel-spec/issues
 - **Email:** antunjurkovic@gmail.com
-- **IETF HTTP Working Group:** Joined mailing list, observing (not yet formally presenting)
+
+### Version History
+- **Version 01** (November 14, 2025): Incorporated expert feedback, added Unicode normalization test vectors, enhanced security considerations
+- **Version 00** (October 2025): Initial submission
 
 ## Patent Notice
 
