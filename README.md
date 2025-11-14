@@ -180,23 +180,29 @@ This is an **individual draft** submitted to the IETF and seeking community feed
 - **Version 01** (November 14, 2025): Incorporated expert feedback, added Unicode normalization test vectors, enhanced security considerations
 - **Version 00** (October 2025): Initial submission
 
-## Patent Notice
+## Intellectual Property Rights (IPR)
 
-This specification implements methods covered by **US Patent Application 63/895,763** (filed October 8, 2025, status: Patent Pending).
+This specification may be covered by **US Patent Application 63/895,763** (filed October 8, 2025, status: Patent Pending).
 
-**For Implementers:**
-- ✅ Website owners: FREE to implement under GPL for your own sites
-- ✅ Individual developers: FREE to build clients/libraries
-- ⚠️ Large-scale commercial services: May require licensing for implementations serving >10,000 URLs/month
-- Contact: licensing@llmpages.org
+### IPR Disclosure
 
-The specification is published to encourage adoption and enable interoperability. Patent rights are reserved to protect against large-scale commercial exploitation without appropriate licensing.
+An IPR disclosure has been submitted to the IETF declaring that licenses under any patent claims held by the author will be made available on a **Royalty-Free basis** under reasonable terms and conditions for all implementations of this specification.
+
+**For All Implementers:**
+- ✅ **Royalty-Free licensing** for all implementations
+- ✅ No restrictions on commercial or non-commercial use
+- ✅ No restrictions on scale or deployment size
+- ✅ Open and interoperable implementations encouraged
+
+For questions about IPR: antunjurkovic@gmail.com
 
 ## License
 
-This specification document is provided under the [IETF Trust Legal Provisions](https://trustee.ietf.org/documents/trust-legal-provisions/) for IETF Documents.
+This specification document is provided under the [IETF Trust Legal Provisions](https://trustee.ietf.org/documents/trust-legal-provisions/) for IETF Documents (BCP 78, BCP 79).
 
-Implementations of the protocol are subject to the patent notice above.
+### Implementation License
+
+Implementations of this protocol are licensed on a **Royalty-Free basis** as described in the IPR disclosure above. The specification is published to encourage widespread adoption and ensure interoperability.
 
 ## Links
 
